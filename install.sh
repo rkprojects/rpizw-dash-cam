@@ -95,7 +95,7 @@ echo "" >> $run_script
 echo "# Auto generated." >> $run_script
 echo "" >> $run_script
 echo "cd $src_dir" >> $run_script
-echo "sudo -H -u $USER python3 main.py $records_dir &" >> $run_script
+echo "sudo -H -u $USER python3 main.py -r \"$records_dir\" &" >> $run_script
 chmod +x $run_script
 
 if [ $? -ne 0 ]; then

@@ -27,9 +27,11 @@ import os
 import subprocess
 import glob
 import sys
-
+import logging
 import webinterface
 import mp4writer
+import util
+import argparse
 
 HOME = os.getcwd()
 
@@ -109,22 +111,61 @@ def get_disk_space_info():
         # return (params[1], params[2], params[3], params[4])
         return params[4]
     except Exception as e:
-        print(e)
+        logger.error(e)
         return None
 
 
-# Override records location with user specified directory
-# in first argument.
-if len(sys.argv) > 1:
-    try:
-        d = os.path.abspath(sys.argv[1])
-        if os.path.isdir(d):
-            RECORDS_LOCATION = d
-    except Exception as e:
-        print("Invalid directory: ")
-        print(e)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-r", "--records-location", 
+            help="Where to store recordings",
+            default=RECORDS_LOCATION)
+parser.add_argument("-L", "--loglevel", 
+            help="Log level threshold",
+            default="info")
+
+args = parser.parse_args()
+
+user_dir_error = (False, None)
+try:
+    d = os.path.abspath(args.records_location)
+    if os.path.isdir(d):
+        RECORDS_LOCATION = d
+    else:
+        user_dir_error = (True, None)
+except Exception as e:
+    user_dir_error = (True, e)
+
+# Log all events even if supplied arguments are incorrect as
+# application is running in background.
+# Log file location
+LOG_FILE_PATH = RECORDS_LOCATION + '/' + 'app.log'
+loglevel = logging.INFO
+user_loglevel = getattr(logging, args.loglevel.upper(), None)
+user_loglevel_invalid = False
+
+if not isinstance(user_loglevel, int):
+    user_loglevel_invalid = True
+else:
+    loglevel = user_loglevel
+
+logging.basicConfig(format='%(module)s:%(lineno)s:%(levelname)s:%(message)s', 
+        filename=LOG_FILE_PATH, 
+        level=loglevel)
+
+logger = logging.getLogger(__name__)
+
+if user_dir_error[0]: 
+    logger.error("Invalid supplied directory '%s'", args.records_location)
+    logger.error("Defaulting to '%s'.", RECORDS_LOCATION)
+    if user_dir_error[1] is not None:
+        logger.critical("Error: '%s'", user_dir_error[1])
         sys.exit(-1)
-        
+    
+    
+if user_loglevel_invalid:
+    logger.error("Loglevel '%s' supplied is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
+
 # Runtime settings (saved as dictionary) are stored in json format. 
 CFG_FILE = RECORDS_LOCATION + '/cfg.json'
 
@@ -133,7 +174,7 @@ if os.path.exists(CFG_FILE):
     with open(CFG_FILE, 'r') as f:
         CFG = json.load(f)
 
-print("Starting web server")
+logger.info("Starting web server")
 webinterface.HOME = HOME
 webinterface.RECORDS_LOCATION = RECORDS_LOCATION
 webinterface.RECORD_FORMAT_EXTENSION = RECORD_FORMAT_EXTENSION
@@ -144,7 +185,7 @@ web_th = webinterface.start()
 
 init_status = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
                 VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
-print(init_status)
+logger.info(init_status)
 webinterface.WebInterfaceHandler.status_text = init_status
 
 # Initialize camera
@@ -230,6 +271,10 @@ try:
                     ", Disk Space Used = {2}%".format(rec_filename,
                             n_loops, disk_used_space_percent)
             
+            # Update SoC temperature in video annotation, to keep 
+            # track performance drop vs temp.
+            cpu_temp = util.get_cpu_temperature()
+            
             seconds = 0 
             got_stop_recording_cmd = False
             while seconds < DURATION_SEC:
@@ -237,7 +282,12 @@ try:
                 
                 # update time in video 
                 rec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                camera.annotate_text = rec_index + ' - ' + rec_time + ' - ' + fixed_annotation
+                camera.annotate_text = (rec_index 
+                                        + ' - ' 
+                                        + rec_time 
+                                        + ' - ' 
+                                        + 'T ' + str(cpu_temp) + 'C - '
+                                        + fixed_annotation)
                 seconds += 1
                 
                 # poll for any web command request
@@ -273,11 +323,11 @@ try:
                 break
                
         except Exception as e:
-            print(e)        
-            print('Recording Stopped')
+            logger.error(e)        
+            logger.error('Recording Stopped')
             webinterface.WebInterfaceHandler.status_text = "Recording Stopped."
             break
 finally:
     camera.close()
-    print('\nCamera closed. Waiting for web server to stop...')
+    logger.info('Camera closed. Waiting for web server to stop...')
     web_th.join()

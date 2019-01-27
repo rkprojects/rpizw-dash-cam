@@ -6,55 +6,56 @@
                 </title>
                 <style type="text/css">
                         body {
-                                margin: 0px;
-                                background-color: whitesmoke;
-                                font-size: 100%;
-                                font-family: verdana, sans-serif;
+                            margin: 0px;
+                            background-color: whitesmoke;
+                            font-size: 100%;
+                            font-family: verdana, sans-serif;
                         }
                         
                         .main {
-                                text-align: left;
-                                padding: 10px 0px 10px 10px;
+                            text-align: left;
+                            padding: 10px 0px 10px 10px;
                                 
                         }
                         
                         table, th, td {
-                                border: 1px solid #BFBFBF;
-                                line-height: 30px;
-                                padding: 5px 5px 5px 5px;
+                            border: 1px solid #BFBFBF;
+                            line-height: 30px;
+                            padding: 5px 5px 5px 5px;
                                 
                         }
                         
                         a:link, a:visited {
-                                color: white;
-                                background-color: blue;
-                                text-decoration: none;
-                                padding: 5px;
+                            color: white;
+                            background-color: blue;
+                            text-decoration: none;
+                            padding: 5px;
                         }
 
                         a:hover, a:active {
-                                color: black;
-                                background-color: orange;
-                                text-decoration: none;
+                            color: black;
+                            background-color: orange;
+                            text-decoration: none;
                         }
                         
                         .records {
-                                
-                                
+                            display: flex;
+                            flex-flow: row wrap;
+                            justify-content: space-around;
+                            width: 100%;    
                         }
                         
                         .records_list {
-                                display: inline-table;
-                                border-collapse: collapse;
-                                
+                            display: block;
+                            border-collapse: collapse;
+                            overflow: scroll;
+                            height: 500px;
                         }
                         
                         .playbox {
-                                text-align: center; 
-                                float: right;
-                                position: -webkit-sticky; /* Safari */
-                                position: sticky;
-                                top: 0;
+                            text-align: center; 
+                            display: block;
+                            
                         }
                 </style>
         </head>

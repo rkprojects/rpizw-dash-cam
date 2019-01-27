@@ -31,8 +31,12 @@ import time
 import glob
 import pathlib
 import shutil
+import logging
 
 import webcommand
+import util
+
+logger = logging.getLogger(__name__)
 
 _SERVER_ADDRESS = ('', 8080)
 
@@ -48,7 +52,7 @@ HOME = os.getcwd()
 # ------------------------------------
 
 LIVESNAP_NAME = "live_snap.jpg"
-SOFTWARE_VERSION = "1.0.0"
+SOFTWARE_VERSION = "1.1.0"
 
 _HTTP_STATUS_CODE_BAD_REQUEST = 400
 _HTTP_STATUS_CODE_REQUEST_TIMEOUT = 408
@@ -129,8 +133,8 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
                             explain=msg)
             return
         except Exception as e:
-            print(traceback.format_exc(), flush=True)
-            print(e, flush=True)
+            logger.error(traceback.format_exc())
+            logger.error(e)
                         
     def parse_get_params(self):
         # Convert url query string into key value pairs.
@@ -193,9 +197,9 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
             shutil.copyfileobj(fileobj, self.wfile)
             fileobj.close()
         except ConnectionResetError as e:
-            print(e)
+            logger.warning(e)
         except BrokenPipeError as e:
-            print(e)
+            logger.warning(e)
         
     def serve_view_records(self):
         # loads view-records.html page in memory and replace its
@@ -247,16 +251,9 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         
         page = page.replace('_STATUS', WebInterfaceHandler.status_text)
         
-        # Get SoC temperature
-        temps = subprocess.check_output(['vcgencmd', 
-                        'measure_temp']).decode('utf-8')
-        if 'temp=' in temps:
-            temps = temps.strip()
-            tempv = temps.split('=')[1]
-            tempv = tempv.split("'")[0] + "&deg;C"
-            page = page.replace('_STEMP', tempv)
-        else:
-            page = page.replace('_STEMP', temps)        
+        # Update SoC temperature
+        cpu_temp = util.get_cpu_temperature()
+        page = page.replace('_STEMP', str(cpu_temp) + "&deg;C")
         
         # Caluclate program uptime not system.
         duration = datetime.now() - WebInterfaceHandler.program_start_time
@@ -307,12 +304,12 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
                 try:
                     shutil.copyfileobj(f, self.wfile)
                 except ConnectionResetError as e:
-                    print(e)
+                    logger.warning(e)
                 except BrokenPipeError as e:
-                    print(e)    
+                    logger.warning(e)    
         except Exception as e:
-            print(traceback.format_exc(), flush=True)
-            print(e, flush=True)
+            logger.error(traceback.format_exc())
+            logger.error(e)
 
 
 class ThreadingWebServer(ThreadingMixIn, HTTPServer):
@@ -337,5 +334,5 @@ if __name__ == "__main__":
         WebInterfaceHandler.program_start_time = datetime.now()
         _start_webserver()
     except Exception as e:
-        print(traceback.format_exc(), flush=True)
-        print(e, flush=True)
+        logger.error(traceback.format_exc())
+        logger.error(e)

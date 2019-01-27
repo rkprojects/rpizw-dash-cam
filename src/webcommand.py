@@ -19,7 +19,6 @@
 import threading
 import time
 
-
 class WebCommandSync:
     # Synchronize a command between web interface and recorder.
     # For dash camera kind of use case there will be only one web user

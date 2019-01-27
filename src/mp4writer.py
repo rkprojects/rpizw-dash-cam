@@ -20,12 +20,17 @@ import subprocess
 import threading
 import queue
 import traceback
+import logging
 
+logger = logging.getLogger(__name__)
 
 class MP4Writer:
     # Converts h264 video from camera to mp4 format with ffmpeg on the
     # fly. Class instance can be passed as argument where file object
     # is expected.
+    
+    MAX_QUEUE_SIZE = 50
+    
     def __init__(self, filepath="o.mp4", fps=30, 
                 input_format="h264", codec="copy"):
         self._filepath = filepath
@@ -46,21 +51,27 @@ class MP4Writer:
         self._proc = subprocess.Popen(ffmpeg_cmd.split(), 
                                 stdin=subprocess.PIPE)
                                 
-        self._video_q = queue.Queue()
+        self._video_q = queue.Queue(MP4Writer.MAX_QUEUE_SIZE)
         
         # create writer thread as non daemon to block main module
         # until this thread is done to avoid loss of data.
         self._th = threading.Thread(target=self.write_to_proc)
         self._th.daemon = False
-        self._th.start()                        
+        self._th.start()
+        self._once_log = True                    
             
     def write(self, vdata):
         # Passing process stdin directly to picamera causes frame
         # drop in full-hd 30 fps format even with large buffer size
         # in the beginning few seconds. This is an alternative 
         # implementation to queue frames until subprocess 
-        # catches up.
+        # catches up. If MAX_QUEUE_SIZE is also not sufficient then
+        # frames will be dropped.
         self._video_q.put(vdata)
+        
+        if self._once_log:
+            logger.debug("Size of vdata: %d", len(vdata))
+            self._once_log = False
             
     def flush(self):
         # Will get flushed while closing writer thread.
@@ -86,8 +97,8 @@ class MP4Writer:
                 while total_bytes_written < len(vdata):
                     total_bytes_written += self._proc.stdin.write(vdata[total_bytes_written:])
             except Exception as e:
-                print(traceback.format_exc(), flush=True)
-                print(e, flush=True)
+                logger.error(traceback.format_exc())
+                logger.error(e)
                 break
                             
         self._proc.stdin.flush()
