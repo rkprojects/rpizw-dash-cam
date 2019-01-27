@@ -1,0 +1,283 @@
+# Dash Camera with Raspberry Pi Zero W
+# Copyright (C) 2019 Ravikiran Bukkasagara <code@ravikiranb.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# TAB = 4 spaces
+
+# Entry point module for the program
+
+import socket
+import time
+import picamera
+from datetime import datetime
+import json
+import os
+import subprocess
+import glob
+import sys
+
+import webinterface
+import mp4writer
+
+HOME = os.getcwd()
+
+# ----------- Compile time configurable parameters BEGIN --------
+# Default location to store video recordings.
+RECORDS_LOCATION = HOME + '/records'
+
+# Maximum duration of each video in seconds. Change it as per use case.
+DURATION_SEC = 60
+
+# Limit and note maximum files to record when used disk space reaches 
+# this value. Change it as per use case, leave enough free space for OS.
+MAX_USED_DISK_SPACE_PERCENT = 70
+
+# Video parameters. Change it as per use case. 
+# Refer to picamera docs for valid values.
+# https://picamera.readthedocs.io
+VIDEO_FPS = 30
+VIDEO_WIDTH = 1920
+VIDEO_HEIGHT = 1080
+VIDEO_QUALITY = 23
+
+# Size of text that will appear on top of recorded video.
+ANNOTATE_TEXT_SIZE = 20
+
+# ---------- Compile time configurable parameters END-----------
+
+
+# Dictionary keys used in runtime configuration settings.
+# Rotation (degrees) to apply to the camera.
+CFG_ROT_KEY = 'rotation'
+
+# Index number of the current recording. Post reboot/power cycle
+# this number will be incremented before use.
+CFG_CURR_INDEX_KEY = 'cindex'
+
+# Loop when index number exceeds maximum files. Maximum number of 
+# files/recordings to limit is calculated based on how much 
+# disk space to use.
+CFG_MAX_FILES_KEY = 'max-files'
+
+# Number of times recordings have looped since the program was 
+# installed. This can provide an approximation on the 
+# sd card life expectancy.
+CFG_N_LOOPS_KEY = 'n-loops'
+
+# Dictionary to save configuration settings.
+CFG = { 
+    CFG_ROT_KEY: 0,
+    CFG_CURR_INDEX_KEY: 0,
+    CFG_MAX_FILES_KEY:0,
+    CFG_N_LOOPS_KEY: 0
+}
+
+KB = 1024
+MB = KB * KB
+RECORD_FORMAT_EXTENSION = ".mp4"
+
+def cfg_save():
+    with open(CFG_FILE, 'w') as f:
+        json.dump(CFG, f)
+
+        
+def get_disk_space_info():
+    params = None
+    try:
+        # get disk space info of the "filesystem" where recordings 
+        # are stored, in case multiple storage options are available in
+        # future.
+        op = subprocess.check_output(['df',
+                        RECORDS_LOCATION]).decode('utf-8').split('\n')
+        params = op[1].split()                
+        params[4] = int(params[4].strip('%')) # Percent used
+        # params[1] = int(params[1]) * KB # Disk Size - bytes
+        # params[2] = int(params[2]) * KB # Used size - bytes
+        # params[3] = int(params[3]) * KB # Available size - bytes
+        # return (params[1], params[2], params[3], params[4])
+        return params[4]
+    except Exception as e:
+        print(e)
+        return None
+
+
+# Override records location with user specified directory
+# in first argument.
+if len(sys.argv) > 1:
+    try:
+        d = os.path.abspath(sys.argv[1])
+        if os.path.isdir(d):
+            RECORDS_LOCATION = d
+    except Exception as e:
+        print("Invalid directory: ")
+        print(e)
+        sys.exit(-1)
+        
+# Runtime settings (saved as dictionary) are stored in json format. 
+CFG_FILE = RECORDS_LOCATION + '/cfg.json'
+
+# Load existing configuration file or start fresh.
+if os.path.exists(CFG_FILE):
+    with open(CFG_FILE, 'r') as f:
+        CFG = json.load(f)
+
+print("Starting web server")
+webinterface.HOME = HOME
+webinterface.RECORDS_LOCATION = RECORDS_LOCATION
+webinterface.RECORD_FORMAT_EXTENSION = RECORD_FORMAT_EXTENSION
+LIVESNAP_LOCATION = RECORDS_LOCATION + '/' + webinterface.LIVESNAP_NAME
+webinterface.WebInterfaceHandler.program_start_time = datetime.now()
+web_th = webinterface.start()
+
+
+init_status = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
+                VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
+print(init_status)
+webinterface.WebInterfaceHandler.status_text = init_status
+
+# Initialize camera
+camera = picamera.PiCamera()
+camera.resolution = (VIDEO_WIDTH, VIDEO_HEIGHT)
+camera.framerate_range = (1, VIDEO_FPS)
+camera.framerate = VIDEO_FPS
+camera.annotate_background = True
+fixed_annotation =  "RPi DashCam {0}x{1} " \
+                    "@ {2}fps - RavikiranB.com".format(VIDEO_WIDTH,
+                        VIDEO_HEIGHT, VIDEO_FPS)
+camera.annotate_text_size = ANNOTATE_TEXT_SIZE
+current_rotation = CFG[CFG_ROT_KEY]
+camera.rotation = current_rotation
+
+try:
+    index = CFG[CFG_CURR_INDEX_KEY] + 1
+    n_loops = CFG[CFG_N_LOOPS_KEY]
+    webinterface.WebInterfaceHandler.status_text = "Starting Recording."
+    webinterface.WebInterfaceHandler.program_start_time = datetime.now()
+    while True:
+        try:        
+            disk_used_space_percent = get_disk_space_info()
+                
+            if CFG[CFG_MAX_FILES_KEY] == 0:
+                if (disk_used_space_percent >= 
+                        MAX_USED_DISK_SPACE_PERCENT):
+                    # From now on recording index will loop 
+                    # back to zero when index 
+                    # reaches CFG[CFG_MAX_FILES_KEY]
+                    CFG[CFG_MAX_FILES_KEY] = index
+                    index = 0
+                    n_loops += 1
+                    CFG[CFG_N_LOOPS_KEY] = n_loops
+            elif index >= CFG[CFG_MAX_FILES_KEY]:
+                index = 0
+                n_loops += 1
+                CFG[CFG_N_LOOPS_KEY] = n_loops
+                    
+            
+            # Record file name format: index_yyyy-mm-dd_HH-MM-SS.mp4
+            time_now = datetime.now()
+            rec_index = str(index)
+            rec_time = time_now.strftime("%Y-%m-%d %H:%M:%S")
+            rec_filename =  (rec_index 
+                            +  '_' 
+                            + time_now.strftime("%Y-%m-%d_%H-%M-%S") 
+                            + RECORD_FORMAT_EXTENSION)
+            rec_filepath = RECORDS_LOCATION + '/' + rec_filename
+            camera.annotate_text = (rec_index 
+                                + ' - ' 
+                                + rec_time 
+                                + ' - ' 
+                                + fixed_annotation)
+            
+            CFG[CFG_CURR_INDEX_KEY] = index
+            cfg_save()
+            
+            # Delete old record with same index number, 
+            # Note: old record will have different time stamp on it. 
+            existing_records = glob.glob(RECORDS_LOCATION 
+                                + '/' 
+                                + rec_index +  '_*')
+            # There should be only one old record.
+            for record in existing_records:
+                os.remove(record)
+                    
+            mp4wfile = mp4writer.MP4Writer(filepath=rec_filepath,
+                            fps=VIDEO_FPS)
+            
+            # Uncomment the below call to record directly to the 
+            # underlying stdin object.
+            #camera.start_recording(mp4wfile.get_file_object(),
+            #                format='h264', quality=VIDEO_QUALITY)
+            
+            # Or use queue mechanism of mp4writer, this will
+            # need more memory but no frame drops at higher resolutions.
+            camera.start_recording(mp4wfile, format='h264',
+                            quality=VIDEO_QUALITY)
+            
+            webinterface.WebInterfaceHandler.status_text = \
+                    "Recording {0} , N-Loops = {1} " \
+                    ", Disk Space Used = {2}%".format(rec_filename,
+                            n_loops, disk_used_space_percent)
+            
+            seconds = 0 
+            got_stop_recording_cmd = False
+            while seconds < DURATION_SEC:
+                camera.wait_recording(1)
+                
+                # update time in video 
+                rec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                camera.annotate_text = rec_index + ' - ' + rec_time + ' - ' + fixed_annotation
+                seconds += 1
+                
+                # poll for any web command request
+                if webinterface.WebInterfaceHandler.wcmd_rotate.requested():
+                    current_rotation += 90
+                    if current_rotation >= 360:
+                            current_rotation = 0
+                            
+                    camera.rotation = current_rotation
+                    webinterface.WebInterfaceHandler.wcmd_rotate.done()
+                    
+                    CFG[CFG_ROT_KEY] = current_rotation
+                    cfg_save()
+                        
+                if webinterface.WebInterfaceHandler.wcmd_livesnap.requested():
+                    camera.capture(LIVESNAP_LOCATION, use_video_port=True)
+                    webinterface.WebInterfaceHandler.wcmd_livesnap.done()
+                        
+                if webinterface.WebInterfaceHandler.wcmd_stop_recording.requested():
+                    got_stop_recording_cmd = True
+                    break
+                    
+            camera.stop_recording()
+            
+            mp4wfile.close()
+            
+            webinterface.WebInterfaceHandler.last_recorded_file = rec_filename
+            index += 1
+            
+            if got_stop_recording_cmd:
+                webinterface.WebInterfaceHandler.status_text = "Recording stopped by user at {0}. Camera closed.".format(rec_time)
+                webinterface.WebInterfaceHandler.wcmd_stop_recording.done()
+                break
+               
+        except Exception as e:
+            print(e)        
+            print('Recording Stopped')
+            webinterface.WebInterfaceHandler.status_text = "Recording Stopped."
+            break
+finally:
+    camera.close()
+    print('\nCamera closed. Waiting for web server to stop...')
+    web_th.join()

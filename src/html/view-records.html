@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+        <head>
+                <title>
+                        View/Download Records - RPi DashCam Web Interface
+                </title>
+                <style type="text/css">
+                        body {
+                                margin: 0px;
+                                background-color: whitesmoke;
+                                font-size: 100%;
+                                font-family: verdana, sans-serif;
+                        }
+                        
+                        .main {
+                                text-align: left;
+                                padding: 10px 0px 10px 10px;
+                                
+                        }
+                        
+                        table, th, td {
+                                border: 1px solid #BFBFBF;
+                                line-height: 30px;
+                                padding: 5px 5px 5px 5px;
+                                
+                        }
+                        
+                        a:link, a:visited {
+                                color: white;
+                                background-color: blue;
+                                text-decoration: none;
+                                padding: 5px;
+                        }
+
+                        a:hover, a:active {
+                                color: black;
+                                background-color: orange;
+                                text-decoration: none;
+                        }
+                        
+                        .records {
+                                
+                                
+                        }
+                        
+                        .records_list {
+                                display: inline-table;
+                                border-collapse: collapse;
+                                
+                        }
+                        
+                        .playbox {
+                                text-align: center; 
+                                float: right;
+                                position: -webkit-sticky; /* Safari */
+                                position: sticky;
+                                top: 0;
+                        }
+                </style>
+        </head>
+        <body onload="init()">
+                <script> 
+                        var vid;
+                        var vid_src;
+                        var pb_status;
+                        function play_rec(rec_name) { 
+                                vid.pause(); 
+                                vid_src.src = rec_name; 
+                                vid.load(); 
+                                vid.play(); 
+                                pb_status.innerHTML = rec_name; 
+                        }
+                        
+                        function init() {
+                                vid = document.getElementById("video_pb"); 
+                                vid_src = document.getElementById("video_src"); 
+                                pb_status = document.getElementById("pb_status");
+                        }
+
+                </script> 
+                <div class="main">
+                        <p><a href="/">Back</a></p>
+                        <h2>Recordings</h1>
+                        
+                        <div class="records">
+                                <table class="records_list">
+                                        _REC_TABLE_ROWS
+                                </table>
+                                
+                                <div class="playbox">
+                                        <b><p id="pb_status"></p></b>
+                                        <video id="video_pb" width="560" height="315" controls>
+                                                        <source id="video_src" src="" type="video/mp4">
+                                                        
+                                                        Your browser does not support the video tag.
+                                        </video>
+                                </div>
+                        </div>
+                        
+                </div>
+        </body>
+</html>

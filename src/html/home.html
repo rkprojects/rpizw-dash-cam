@@ -1,0 +1,123 @@
+<html>
+        <head>
+                <title>RPi DashCam Web Interface</title>
+                <!--<meta http-equiv="refresh" content="15">-->
+                <style type="text/css">
+                        body {
+                                margin: 0px;
+                                background-color: whitesmoke;
+                                font-size: 100%;
+                                font-family: verdana, sans-serif;
+                        }
+                        
+                        .main {
+                                text-align: center;
+                        }
+
+                        table {
+                                border-collapse: collapse;
+                                margin-left: auto;
+                                margin-right: auto;
+                        }
+
+                        table, th, td {
+                                border: 1px solid #BFBFBF;
+                        }
+                        
+                        th {
+                                text-align: left;
+                                padding-left: 5px;
+                                padding-right: 5px;
+                                height: 20px;
+                        }
+                        
+                        td {
+                                padding-left: 5px;
+                                padding-right: 5px;
+                                
+                        }
+                        
+                        .sysinfo {
+                                
+                        }
+                        
+                                               
+                        a:link, a:visited {
+                            color: white;
+                            background-color: blue;
+                            text-decoration: none;
+                            padding: 5px;
+                            font-weight: bold;
+                        }
+
+                        a:hover, a:active {
+                            color: black;
+                            background-color: orange;
+                            text-decoration: none;
+                            font-weight: bold;
+                        }
+                        
+                        .media_bar {
+                                display: flex;
+                                flex-flow: row wrap;
+                                justify-content: space-evenly;
+                                width: 100%;
+                        }
+                        
+                        .media_element {
+                                width: 700px; 
+                                text-align: center; 
+                                margin: 10px 0px 10px; 0px;
+                                padding: 5px 0px 5px; 0px;
+                                
+                                
+                                border-width: 1px 1px 1px 1px;
+                                border-style: solid;
+                                border-color: #BFBFBF;
+                                
+                                
+                        }
+                        
+                        
+                        
+                </style>
+        </head>
+        <body>
+                <div class="main">
+                        <h1>RPi DashCam Web Interface</h1>
+                        
+                        <table class="sysinfo">
+                                <tr>
+                                        <th>Version</th>
+                                        <td>_VERSION</td>
+                                </tr>
+                                <tr>
+                                        <th>CPU Temperature</th>
+                                        <td>_STEMP</td>
+                                </tr>
+                                <tr>
+                                        <th>Up Time</th>
+                                        <td>_UPTIME</td>
+                                </tr>
+                        </table>
+                        <p><span style="background-color: yellow; padding: 0px 5px 0px 5px;"><b>Status:</b> _STATUS</span></p>
+                        
+                        <p>_WEB_COMMANDS</p>
+                        
+                        
+                        <div class="media_bar">
+                                <div class="media_element">
+                                        <p><b>Live Snapshot</b></p>
+                                        <img src="livesnap" alt="Live Snap" width="640" height="360">
+                                </div>
+                                <div class="media_element">
+                                        <p><b>Last Recorded Video - _LRV_FILE</b></p>
+                                        <video width="640" height="360" controls>
+                                                <source src="_LRV_FILE" type="video/mp4">-->
+                                                Your browser does not support the video tag.
+                                        </video> 
+                                </div>
+                        </div>
+                </div> 
+        </body>
+</html>
