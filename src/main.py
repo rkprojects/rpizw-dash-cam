@@ -57,6 +57,9 @@ VIDEO_QUALITY = 23
 # Size of text that will appear on top of recorded video.
 ANNOTATE_TEXT_SIZE = 20
 
+# How many days to keep old log files
+KEEP_OLD_LOGS_FOR_DAYS = 2
+
 # ---------- Compile time configurable parameters END-----------
 
 
@@ -132,14 +135,20 @@ try:
     if os.path.isdir(d):
         RECORDS_LOCATION = d
     else:
-        user_dir_error = (True, None)
+        user_dir_error = (True, "Given records location is not a directory.")
 except Exception as e:
     user_dir_error = (True, e)
 
-# Log all events even if supplied arguments are incorrect as
+# Log all events even if given arguments are incorrect as
 # application is running in background.
 # Log file location
-LOG_FILE_PATH = RECORDS_LOCATION + '/' + 'app.log'
+
+util.delete_old_logs(RECORDS_LOCATION, KEEP_OLD_LOGS_FOR_DAYS)
+LOG_FILE_PATH = (RECORDS_LOCATION 
+                + '/' 
+                + datetime.now().strftime("%Y-%m-%d")
+                + '.log')
+                
 loglevel = logging.INFO
 user_loglevel = getattr(logging, args.loglevel.upper(), None)
 user_loglevel_invalid = False
@@ -156,15 +165,14 @@ logging.basicConfig(format='%(module)s:%(lineno)s:%(levelname)s:%(message)s',
 logger = logging.getLogger(__name__)
 
 if user_dir_error[0]: 
-    logger.error("Invalid supplied directory '%s'", args.records_location)
-    logger.error("Defaulting to '%s'.", RECORDS_LOCATION)
+    logger.error("Invalid given directory '%s'", args.records_location)
     if user_dir_error[1] is not None:
         logger.critical("Error: '%s'", user_dir_error[1])
         sys.exit(-1)
-    
+    logger.warning("Defaulting to '%s'.", RECORDS_LOCATION)
     
 if user_loglevel_invalid:
-    logger.error("Loglevel '%s' supplied is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
+    logger.error("Loglevel '%s' given is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
 
 # Runtime settings (saved as dictionary) are stored in json format. 
 CFG_FILE = RECORDS_LOCATION + '/cfg.json'

@@ -21,6 +21,8 @@ import threading
 import queue
 import traceback
 import logging
+import io
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,8 @@ class MP4Writer:
     # is expected.
     
     MAX_QUEUE_SIZE = 50
+    # Video buffer size to hold before commiting to queue.
+    MAX_VIDEO_BIO_SIZE = 1*1024*1024
     
     def __init__(self, filepath="o.mp4", fps=30, 
                 input_format="h264", codec="copy"):
@@ -52,14 +56,13 @@ class MP4Writer:
                                 stdin=subprocess.PIPE)
                                 
         self._video_q = queue.Queue(MP4Writer.MAX_QUEUE_SIZE)
+        self._video_bio_size = 0
+        self._video_bio = io.BytesIO()
         
-        # create writer thread as non daemon to block main module
-        # until this thread is done to avoid loss of data.
         self._th = threading.Thread(target=self.write_to_proc)
-        self._th.daemon = False
+        self._th.daemon = True
         self._th.start()
-        self._once_log = True                    
-            
+        
     def write(self, vdata):
         # Passing process stdin directly to picamera causes frame
         # drop in full-hd 30 fps format even with large buffer size
@@ -67,15 +70,21 @@ class MP4Writer:
         # implementation to queue frames until subprocess 
         # catches up. If MAX_QUEUE_SIZE is also not sufficient then
         # frames will be dropped.
-        self._video_q.put(vdata)
         
-        if self._once_log:
-            logger.debug("Size of vdata: %d", len(vdata))
-            self._once_log = False
+        # Buffered IO consumes all given data.
+        self._video_bio.write(vdata)
+        self._video_bio_size += len(vdata)
+        
+        if self._video_bio_size >= MP4Writer.MAX_VIDEO_BIO_SIZE:
+            self._video_q.put(self._video_bio)
+            self._video_bio = io.BytesIO()
+            self._video_bio_size = 0
             
     def flush(self):
-        # Will get flushed while closing writer thread.
-        pass
+        if self._video_bio_size > 0:
+            self._video_q.put(self._video_bio)
+            self._video_bio = io.BytesIO()
+            self._video_bio_size = 0
             
     def get_file_object(self):
         # If using underlying stdin file object directly then do 
@@ -85,17 +94,21 @@ class MP4Writer:
     def close(self):
         # Call this function to close writer thread 
         # even if process stdin was directly used outside.
+        self.flush()
+        self._video_bio.close()
+        self._video_bio_size = 0
         self._video_q.put(None)
+        self._th.join()
             
     def write_to_proc(self):
         while True:
             try:
-                vdata = self._video_q.get()
-                if vdata is None:
+                bio = self._video_q.get()
+                if bio is None:
                     break
-                total_bytes_written = 0
-                while total_bytes_written < len(vdata):
-                    total_bytes_written += self._proc.stdin.write(vdata[total_bytes_written:])
+                bio.seek(0)
+                shutil.copyfileobj(bio, self._proc.stdin)
+                bio.close()
             except Exception as e:
                 logger.error(traceback.format_exc())
                 logger.error(e)

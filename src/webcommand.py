@@ -48,19 +48,20 @@ class WebCommandSync:
     
     def requested(self):
         # Called from recorder side.
+        v = False
         with self._lock:
             if self._state == WebCommandSync.REQUESTED:
-                return True
-        return False
+                v = True
+        return v
             
     def done(self, context=None):
         # Called from recorder side.
         with self._lock:
             self._state = WebCommandSync.IDLE       
             self._context = context
-            # Give a event pulse to waiting threads.
-            self._event.set()
-            self._event.clear()
+        # Give a event pulse to waiting threads.
+        self._event.set()
+        self._event.clear()
 
     def wait(self, timeout_seconds=5):
         # Called from web interface side.

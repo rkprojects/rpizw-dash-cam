@@ -17,6 +17,9 @@
 # TAB = 4 spaces
 
 import subprocess
+import glob
+import os
+import datetime
 
 def get_cpu_temperature():
     temps = subprocess.check_output(['vcgencmd', 
@@ -27,3 +30,14 @@ def get_cpu_temperature():
         return float(tempv.split("'")[0])
     
     return 0.0
+
+
+def delete_old_logs(log_dir, days_to_keep=2):
+    # Delete log files older than days_to_keep
+    td = datetime.timedelta(days=days_to_keep)
+    d = datetime.datetime.today() - td
+    
+    log_files = glob.glob(log_dir + '/*.log')
+    for log_file in log_files:
+            if os.path.getmtime(log_file) < d.timestamp():
+                os.remove(log_file)
