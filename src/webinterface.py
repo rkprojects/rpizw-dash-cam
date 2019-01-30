@@ -72,7 +72,7 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
     program_start_time = None
     # User can playback last recorded video on home page, post powerup
     # wait until one recording is over.
-    last_recorded_file = ''
+    last_recorded_file = 'Please wait for one recording to be over'
     
     # Shared static variables with synchronizers.
     wcmd_livesnap = webcommand.WebCommandSync()
@@ -269,6 +269,11 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
             uptime += "{0} mins ".format(mins)
         uptime += "{0} seconds ".format(total_secs)
         page = page.replace('_UPTIME', uptime)
+        
+        ssid, my_ip = util.get_wlan_info()
+        page = page.replace('_WLAN_SSID', ssid)
+        page = page.replace('_IP_ADDR', my_ip)
+        
         
         page = page.replace('_WEB_COMMANDS', 
                 '<a href="view-records">View/Download Records</a>&nbsp;&nbsp;&nbsp;&nbsp;' 

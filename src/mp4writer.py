@@ -98,7 +98,7 @@ class MP4Writer:
         self._video_bio.close()
         self._video_bio_size = 0
         self._video_q.put(None)
-        self._th.join()
+        #self._th.join()
             
     def write_to_proc(self):
         while True:

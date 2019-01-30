@@ -20,6 +20,9 @@ import subprocess
 import glob
 import os
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_cpu_temperature():
     temps = subprocess.check_output(['vcgencmd', 
@@ -41,3 +44,18 @@ def delete_old_logs(log_dir, days_to_keep=2):
     for log_file in log_files:
             if os.path.getmtime(log_file) < d.timestamp():
                 os.remove(log_file)
+                logger.warning("Removing old log file: %s", log_file)
+
+def get_wlan_info():
+    # Return tuple (ssid, device_ip)
+    try:
+        ssid = subprocess.check_output("iwgetid -r".split()).decode('utf-8')
+        cfg = subprocess.check_output("ifconfig wlan0".split()).decode('utf-8')
+        i = cfg.find("inet ")
+        ip = ""
+        if i >= 0:
+            ip = cfg[i:].split()[1]
+    except Exception as e:
+        logger.error("Failed to get WiFi connection details: %s", e)
+    finally:
+        return (ssid, ip)

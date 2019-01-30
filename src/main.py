@@ -50,15 +50,24 @@ MAX_USED_DISK_SPACE_PERCENT = 70
 # Refer to picamera docs for valid values.
 # https://picamera.readthedocs.io
 VIDEO_FPS = 30
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
+HIGH_RES_VIDEO_WIDTH = 1920
+HIGH_RES_VIDEO_HEIGHT = 1080
 VIDEO_QUALITY = 23
+
+# Alternate video resolution to drop temperature.
+LOW_RES_VIDEO_WIDTH = 1280
+LOW_RES_VIDEO_HEIGHT = 720
 
 # Size of text that will appear on top of recorded video.
 ANNOTATE_TEXT_SIZE = 20
 
 # How many days to keep old log files
 KEEP_OLD_LOGS_FOR_DAYS = 2
+
+# Reduce resolution when temperature exceeds threshold.
+TEMPERATURE_THRESHOLD_HIGH = 75.0 # degree Celsius
+# Restore high resolution when temperature drops.
+TEMPERATURE_THRESHOLD_NORMAL = 65.0 # degree Celsius
 
 # ---------- Compile time configurable parameters END-----------
 
@@ -142,8 +151,6 @@ except Exception as e:
 # Log all events even if given arguments are incorrect as
 # application is running in background.
 # Log file location
-
-util.delete_old_logs(RECORDS_LOCATION, KEEP_OLD_LOGS_FOR_DAYS)
 LOG_FILE_PATH = (RECORDS_LOCATION 
                 + '/' 
                 + datetime.now().strftime("%Y-%m-%d")
@@ -174,6 +181,8 @@ if user_dir_error[0]:
 if user_loglevel_invalid:
     logger.error("Loglevel '%s' given is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
 
+util.delete_old_logs(RECORDS_LOCATION, KEEP_OLD_LOGS_FOR_DAYS)
+
 # Runtime settings (saved as dictionary) are stored in json format. 
 CFG_FILE = RECORDS_LOCATION + '/cfg.json'
 
@@ -190,6 +199,8 @@ LIVESNAP_LOCATION = RECORDS_LOCATION + '/' + webinterface.LIVESNAP_NAME
 webinterface.WebInterfaceHandler.program_start_time = datetime.now()
 web_th = webinterface.start()
 
+VIDEO_WIDTH = HIGH_RES_VIDEO_WIDTH
+VIDEO_HEIGHT = HIGH_RES_VIDEO_HEIGHT
 
 init_status = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
                 VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
@@ -202,9 +213,7 @@ camera.resolution = (VIDEO_WIDTH, VIDEO_HEIGHT)
 camera.framerate_range = (1, VIDEO_FPS)
 camera.framerate = VIDEO_FPS
 camera.annotate_background = True
-fixed_annotation =  "RPi DashCam {0}x{1} " \
-                    "@ {2}fps - RavikiranB.com".format(VIDEO_WIDTH,
-                        VIDEO_HEIGHT, VIDEO_FPS)
+fixed_annotation =  "RavikiranB.com"
 camera.annotate_text_size = ANNOTATE_TEXT_SIZE
 current_rotation = CFG[CFG_ROT_KEY]
 camera.rotation = current_rotation
@@ -214,6 +223,8 @@ try:
     n_loops = CFG[CFG_N_LOOPS_KEY]
     webinterface.WebInterfaceHandler.status_text = "Starting Recording."
     webinterface.WebInterfaceHandler.program_start_time = datetime.now()
+    high_temp_triggered = False
+    
     while True:
         try:        
             disk_used_space_percent = get_disk_space_info()
@@ -233,7 +244,26 @@ try:
                 n_loops += 1
                 CFG[CFG_N_LOOPS_KEY] = n_loops
                     
-            
+            # Update SoC temperature in video annotation, to keep 
+            # track of resolution drop vs temp.
+            cpu_temp = util.get_cpu_temperature()
+            if cpu_temp >= TEMPERATURE_THRESHOLD_HIGH:
+                if not high_temp_triggered:
+                    logger.warning("CPU temperature %s C exceeded threshold %s C",
+                                    cpu_temp, TEMPERATURE_THRESHOLD_HIGH)
+                    logger.warning("Reducing video resolution")
+                    VIDEO_WIDTH = LOW_RES_VIDEO_WIDTH
+                    VIDEO_HEIGHT = LOW_RES_VIDEO_HEIGHT
+                    camera.resolution = (VIDEO_WIDTH, VIDEO_HEIGHT)
+                    high_temp_triggered = True
+            elif cpu_temp <= TEMPERATURE_THRESHOLD_NORMAL:
+                if high_temp_triggered:
+                    logger.warning("Restoring high video resolution")
+                    VIDEO_WIDTH = HIGH_RES_VIDEO_WIDTH
+                    VIDEO_HEIGHT = HIGH_RES_VIDEO_HEIGHT
+                    camera.resolution = (VIDEO_WIDTH, VIDEO_HEIGHT)
+                    high_temp_triggered = False
+                    
             # Record file name format: index_yyyy-mm-dd_HH-MM-SS.mp4
             time_now = datetime.now()
             rec_index = str(index)
@@ -243,11 +273,11 @@ try:
                             + time_now.strftime("%Y-%m-%d_%H-%M-%S") 
                             + RECORD_FORMAT_EXTENSION)
             rec_filepath = RECORDS_LOCATION + '/' + rec_filename
-            camera.annotate_text = (rec_index 
-                                + ' - ' 
-                                + rec_time 
-                                + ' - ' 
-                                + fixed_annotation)
+            
+            video_format_text = "RPi DashCam {0}x{1} @ {2}fps".format(
+                                    VIDEO_WIDTH,
+                                    VIDEO_HEIGHT,
+                                    VIDEO_FPS)
             
             CFG[CFG_CURR_INDEX_KEY] = index
             cfg_save()
@@ -274,29 +304,35 @@ try:
             camera.start_recording(mp4wfile, format='h264',
                             quality=VIDEO_QUALITY)
             
-            webinterface.WebInterfaceHandler.status_text = \
-                    "Recording {0} , N-Loops = {1} " \
-                    ", Disk Space Used = {2}%".format(rec_filename,
+            web_status_text = "Recording {0} , N-Loops = {1}, " \
+                    "Disk Space Used = {2}%".format(rec_filename,
                             n_loops, disk_used_space_percent)
+            if high_temp_triggered:
+                web_status_text += "<br>Earlier temperature exceeded {0}&deg;C, " \
+                                " video resolution reduced to {1}x{2}.<br>" \
+                                "High resolution will be restored after temperature drops " \
+                                "below {3}&deg;C".format(
+                                TEMPERATURE_THRESHOLD_HIGH,
+                                VIDEO_WIDTH,
+                                VIDEO_HEIGHT,
+                                TEMPERATURE_THRESHOLD_NORMAL)
             
-            # Update SoC temperature in video annotation, to keep 
-            # track performance drop vs temp.
-            cpu_temp = util.get_cpu_temperature()
+            webinterface.WebInterfaceHandler.status_text = web_status_text
+                    
             
             seconds = 0 
             got_stop_recording_cmd = False
             while seconds < DURATION_SEC:
-                camera.wait_recording(1)
-                
-                # update time in video 
+                # update time
                 rec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 camera.annotate_text = (rec_index 
                                         + ' - ' 
                                         + rec_time 
                                         + ' - ' 
                                         + 'T ' + str(cpu_temp) + 'C - '
+                                        + video_format_text
+                                        + ' - '
                                         + fixed_annotation)
-                seconds += 1
                 
                 # poll for any web command request
                 if webinterface.WebInterfaceHandler.wcmd_rotate.requested():
@@ -317,6 +353,9 @@ try:
                 if webinterface.WebInterfaceHandler.wcmd_stop_recording.requested():
                     got_stop_recording_cmd = True
                     break
+                
+                camera.wait_recording(1)
+                seconds += 1
                     
             camera.stop_recording()
             
