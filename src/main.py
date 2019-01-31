@@ -191,7 +191,7 @@ if os.path.exists(CFG_FILE):
     with open(CFG_FILE, 'r') as f:
         CFG = json.load(f)
 
-logger.info("Starting web server")
+logger.info("Starting web server\n\n")
 webinterface.HOME = HOME
 webinterface.RECORDS_LOCATION = RECORDS_LOCATION
 webinterface.RECORD_FORMAT_EXTENSION = RECORD_FORMAT_EXTENSION
@@ -304,19 +304,25 @@ try:
             camera.start_recording(mp4wfile, format='h264',
                             quality=VIDEO_QUALITY)
             
-            web_status_text = "Recording {0} , N-Loops = {1}, " \
-                    "Disk Space Used = {2}%".format(rec_filename,
-                            n_loops, disk_used_space_percent)
+            webinterface.WebInterfaceHandler.disk_space_used_percent = (
+                    disk_used_space_percent)
+            webinterface.WebInterfaceHandler.current_record_name = (
+                    rec_filename)
+            webinterface.WebInterfaceHandler.n_loops = n_loops
+            
+            webinterface.WebInterfaceHandler.is_recording_on = True
+                            
             if high_temp_triggered:
-                web_status_text += "<br>Earlier temperature exceeded {0}&deg;C, " \
-                                " video resolution reduced to {1}x{2}.<br>" \
+                web_status_text = "Earlier temperature exceeded {0}&deg;C, " \
+                                " video resolution reduced to {1}x{2}. " \
                                 "High resolution will be restored after temperature drops " \
                                 "below {3}&deg;C".format(
                                 TEMPERATURE_THRESHOLD_HIGH,
                                 VIDEO_WIDTH,
                                 VIDEO_HEIGHT,
                                 TEMPERATURE_THRESHOLD_NORMAL)
-            
+            else:
+                web_status_text = "All OK"
             webinterface.WebInterfaceHandler.status_text = web_status_text
                     
             
@@ -365,14 +371,21 @@ try:
             index += 1
             
             if got_stop_recording_cmd:
-                webinterface.WebInterfaceHandler.status_text = "Recording stopped by user at {0}. Camera closed.".format(rec_time)
+                webinterface.WebInterfaceHandler.status_text = \
+                    "Recording stopped by user at " \
+                    "{0}. Camera closed.".format(rec_time)
+                webinterface.WebInterfaceHandler.current_record_name = ''
+                webinterface.WebInterfaceHandler.is_recording_on = False
                 webinterface.WebInterfaceHandler.wcmd_stop_recording.done()
                 break
                
         except Exception as e:
             logger.error(e)        
             logger.error('Recording Stopped')
-            webinterface.WebInterfaceHandler.status_text = "Recording Stopped."
+            webinterface.WebInterfaceHandler.is_recording_on = False
+            webinterface.WebInterfaceHandler.status_text = (
+                "Internal error. Recording Stopped.<br>" 
+                + str(e))
             break
 finally:
     camera.close()
