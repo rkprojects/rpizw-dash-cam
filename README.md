@@ -52,7 +52,7 @@ Ensure that RPi is connected to WiFi and Internet.
 
 ### Get Source Code
 
-$ git clone https://bitbucket.org/rknb/rpizw-dash-cam.git  
+$ git clone https://github.com/rkprojects/rpizw-dash-cam.git  
 $ cd rpizw-dash-cam  
 $ ./install.sh  
 $ ./run.sh
