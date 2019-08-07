@@ -45,6 +45,30 @@ Project home page is at <https://ravikiranb.com/projects/rpizw-dash-cam/>
 
     $ sudo apt install git
 
+* Controlling the Dash Camera with smart phone on bluetooth (BLE) interface will require:  
+    * BlueZ stack version [5.50](http://www.bluez.org/release-of-bluez-5-50/):  
+        You might have to manually compile and install it if its not available with **apt**  
+        Please refer to its Readme and Install file in source code.
+    * Modify BlueZ daemon configuration file */etc/dbus-1/system.d/bluetooth.conf*:  
+        Add the following **bluetooth** group policy in the configuration file to avoid 
+        running the program as sudo/root, and add your user account to group **bluetooth**:  
+        ```
+        <policy group="bluetooth">
+            <allow own="org.bluez"/>
+            <allow send_destination="org.bluez"/>
+            <allow send_interface="org.bluez.Agent1"/>
+            <allow send_interface="org.bluez.Profile1"/>
+            <allow send_interface="org.bluez.GattService1"/>
+            <allow send_interface="org.bluez.GattCharacteristic1"/>
+            <allow send_interface="org.bluez.GattDescriptor1"/>
+            <allow send_interface="org.bluez.LEAdvertisement1"/>
+            <allow send_interface="org.freedesktop.DBus.ObjectManager"/>
+            <allow send_interface="org.freedesktop.DBus.Properties"/>
+      </policy>
+      ```
+      
+    * Python dbus module to access bluez D-Bus APIs:  
+        $ sudo apt install python3-dbus python3-gi
 
 ## Install
 
@@ -61,9 +85,19 @@ $ ./run.sh
 
 Open web browser on your computer and access http://raspberrypi.local:8080/
 
+### Access Bluetooth Interface on Smartphone
+
+The Dash Camera application starts a GATT server in peripheral mode and starts advertisement by default for 180 seconds. For now there is no security/authentication anyone can connect and control.
+
+On Android install Nordic semiconductor's [nRF Connect for Mobile](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) app, you can use any app that can scan and explore BLE GATT services.
+
+Dash Camera will appear as **RPi DashCam** device after scanning. Connect to it and explore its custom
+service, read out all the characteristics and/or enable notifications.  
+Each characteristic has a *Characteristic User Description Descriptor* to describe its purpose.
+
 ## License
 
-Copyright (C) 2019 Ravikiran Bukkasagara, <code@ravikiranb.com>
+Copyright (C) 2019 Ravikiran Bukkasagara, <contact@ravikiranb.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

@@ -218,10 +218,28 @@ camera.annotate_text_size = ANNOTATE_TEXT_SIZE
 current_rotation = CFG[CFG_ROT_KEY]
 camera.rotation = current_rotation
 
+# Enable BLE Control feature if BlueZ available
+ble_service = None
+if util.bluez_available():
+    sys.path.append(HOME + "/ble")
+    import ble_dcam
+    
+    logger.info("Starting BLE GATT Server\n\n")
+    ble_service = ble_dcam.start()
+    if ble_service:
+        ble_service.update_version(webinterface.SOFTWARE_VERSION)
+        ble_service.update_recording_status(webinterface.WebInterfaceHandler.status_text)
+else:
+    logger.error("BLE feature won't be enabled: requirements not met.")
+    
 try:
     index = CFG[CFG_CURR_INDEX_KEY] + 1
     n_loops = CFG[CFG_N_LOOPS_KEY]
     webinterface.WebInterfaceHandler.status_text = "Starting Recording."
+    if ble_service:
+        ble_service.update_recording_status(
+            webinterface.WebInterfaceHandler.status_text)
+            
     webinterface.WebInterfaceHandler.program_start_time = datetime.now()
     high_temp_triggered = False
     
@@ -263,6 +281,9 @@ try:
                     VIDEO_HEIGHT = HIGH_RES_VIDEO_HEIGHT
                     camera.resolution = (VIDEO_WIDTH, VIDEO_HEIGHT)
                     high_temp_triggered = False
+                    
+            if ble_service:
+                ble_service.update_temperature(int(cpu_temp*10))
                     
             # Record file name format: index_yyyy-mm-dd_HH-MM-SS.mp4
             time_now = datetime.now()
@@ -324,7 +345,9 @@ try:
             else:
                 web_status_text = "All OK"
             webinterface.WebInterfaceHandler.status_text = web_status_text
-                    
+            if ble_service:
+                ble_service.update_recording_status(
+                    webinterface.WebInterfaceHandler.status_text)
             
             seconds = 0 
             got_stop_recording_cmd = False
@@ -370,6 +393,12 @@ try:
             webinterface.WebInterfaceHandler.last_recorded_file = rec_filename
             index += 1
             
+            if ble_service:
+                # TODO - some kind of D-Bus based notification is required
+                # to update WiFi SSID, IP.
+                ssid, wan_ip = util.get_wlan_info()
+                ble_service.update_ipaddr(ssid + ': ' + wan_ip)
+            
             if got_stop_recording_cmd:
                 webinterface.WebInterfaceHandler.status_text = \
                     "Recording stopped by user at " \
@@ -377,6 +406,9 @@ try:
                 webinterface.WebInterfaceHandler.current_record_name = ''
                 webinterface.WebInterfaceHandler.is_recording_on = False
                 webinterface.WebInterfaceHandler.wcmd_stop_recording.done()
+                if ble_service:
+                    ble_service.update_recording_status(
+                        webinterface.WebInterfaceHandler.status_text)
                 break
                
         except Exception as e:
@@ -386,6 +418,9 @@ try:
             webinterface.WebInterfaceHandler.status_text = (
                 "Internal error. Recording Stopped.<br>" 
                 + str(e))
+            if ble_service:
+                ble_service.update_recording_status(
+                    webinterface.WebInterfaceHandler.status_text)
             break
 finally:
     camera.close()

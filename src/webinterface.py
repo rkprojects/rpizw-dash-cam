@@ -53,7 +53,7 @@ HOME = os.getcwd()
 # ------------------------------------
 
 LIVESNAP_NAME = "live_snap.jpg"
-SOFTWARE_VERSION = "1.2.0"
+SOFTWARE_VERSION = "1.3.0-dev"
 
 _HTTP_STATUS_CODE_BAD_REQUEST = 400
 _HTTP_STATUS_CODE_REQUEST_TIMEOUT = 408
@@ -161,11 +161,11 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
     
     def serve_reboot(self):
         self.redirect_to_home()
-        os.system("sudo reboot")
+        util.reboot()
     
     def serve_shutdown(self):
         self.redirect_to_home()
-        os.system("sudo poweroff")
+        util.shutdown()
                     
     def redirect_to_home(self):
         self.send_response(_HTTP_STATUS_CODE_REDIRECT) 

@@ -57,5 +57,28 @@ def get_wlan_info():
             ip = cfg[i:].split()[1]
     except Exception as e:
         logger.error("Failed to get WiFi connection details: %s", e)
+        ssid = "-"
+        ip = "-"
     finally:
         return (ssid, ip)
+
+def reboot():
+    os.system("sudo reboot")
+    
+def shutdown():
+    os.system("sudo poweroff")
+    
+def bluez_available():
+    try:
+        import dbus.mainloop.glib
+        import dbus
+        import dbus.service
+        try:
+          from gi.repository import GObject
+        except ImportError:
+          import gobject as GObject
+        return True
+    except ImportError:
+        return False
+    
+    return False
