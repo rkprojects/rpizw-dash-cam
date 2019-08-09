@@ -24,6 +24,7 @@ import struct
 import dbus
 import threading
 import logging
+from datetime import datetime
 
 from gatt_dbus_service import *
 
@@ -70,16 +71,16 @@ CTRL_CMD_TRIG_REC       = 7
 class DCamService(Service):
     """
     This service will update remote client about:
-    1. Assigned IP Address on WiFi (Notify)
+    1. Assigned IP Address on WiFi (Read only)
     2. Recording Status (Notify)
     3. Version (Read Only)
     4. Temperature deg-Celsius (Notify)
 
     Controls: Needs authenticated connection.
     1. Control Flag (authenticated-signed-writes)
+    2. Date Time (read, authenticated-signed-writes)
         
     # TODO
-    2. Date Time (read, authenticated-signed-writes)
     3. Location (authenticated-signed-writes)
     """
     def __init__(self, bus):
@@ -107,6 +108,10 @@ class DCamService(Service):
                                 )
         
         self.add_characteristic(self.control_char)
+        
+        self.sys_datetime = SystemDateTimeRWChrc(bus, 5, self, "RPi Date Time")
+        self.add_characteristic(self.sys_datetime)
+        
         
 
     def update_ipaddr(self, value):
@@ -240,13 +245,13 @@ class VersionChar(Characteristic):
                 VERSION_CHAR_UUID,
                 ['read'],
                 service)
-        self._version = bytes("Not Available", encoding='utf-8')
+        self._version = dbus.ByteArray("Not Available".encode())
         if description:
             self.add_descriptor(
                 CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
                 
     def update(self, new_value):
-        self._version = bytes(new_value, encoding='utf-8')
+        self._version = dbus.ByteArray(new_value.encode())
         return False   
     
     def ReadValue(self, options):
@@ -279,7 +284,51 @@ class ByteWriteChrc(Characteristic):
         
         if self.on_write_cb:
             threading.Thread(target=self.on_write_cb, args=(byte,)).start()
+            
+class SystemDateTimeRWChrc(Characteristic):
+    def __init__(self, bus, index, service, description=None):
+        Characteristic.__init__(
+                self, bus, index,
+                SYSTEM_DATE_TIME_CHAR_UUID,
+                ['read', 'write'],
+                service)
+                
+        if description:
+            self.add_descriptor(
+                CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
         
+    def WriteValue(self, value, options):
+        logger.info("SystemDateTimeRWChrc WriteValue called")
+
+        if len(value) != 7:
+            logger.error("Invalid length: " + str(len(value)))
+            
+        #logger.info("Raw value: " + repr(value))
+        
+        raw_dt = struct.unpack("<HBBBBB", bytes(value))
+        dt = datetime(raw_dt[0], # year 
+                        raw_dt[1], # mon
+                        raw_dt[2], # day
+                        hour=raw_dt[3],
+                        minute=raw_dt[4],
+                        second=raw_dt[5]
+                        )
+        logger.info("Setting System time to :" + repr(dt))
+        util.set_system_datetime(dt)
+
+        
+    def ReadValue(self, options):
+        logger.info("SystemDateTimeRWChrc ReadValue called")
+        now = datetime.today()
+        dt = dbus.Array(struct.pack('<H', now.year)
+                    + bytes([now.month,
+                            now.day,
+                            now.hour,
+                            now.minute,
+                            now.second]),
+                    signature='y')
+        
+        return dt
 
 class CharacteristicUserDescriptionDescriptor(Descriptor):
     """

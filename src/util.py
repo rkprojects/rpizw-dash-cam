@@ -67,6 +67,9 @@ def reboot():
     
 def shutdown():
     os.system("sudo poweroff")
+
+def set_system_datetime(dtime):
+    os.system('sudo date -s "' + dtime.strftime("%Y-%m-%d %H:%M:%S") + '"') 
     
 def bluez_available():
     try:
