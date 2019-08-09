@@ -1,5 +1,5 @@
 # Dash Camera with Raspberry Pi Zero W
-# Copyright (C) 2019 Ravikiran Bukkasagara <code@ravikiranb.com>
+# Copyright (C) 2019 Ravikiran Bukkasagara <contact@ravikiranb.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,26 +34,18 @@ import shutil
 import logging
 import io
 
-import webcommand
+from command import Command
 import util
+import recorder
+import config
 
 logger = logging.getLogger(__name__)
 
-_SERVER_ADDRESS = ('', 8080)
+_SERVER_ADDRESS = ('', config.HTTP_SERVER_PORT_NUMBER)
 
 _MINUTE_SEC = 60
 _HOUR_SEC = 60 * _MINUTE_SEC
 
-# -------------------------------------
-# main module will update these variables before starting 
-# web server.
-RECORDS_LOCATION = "."
-RECORD_FORMAT_EXTENSION = ".h264"
-HOME = os.getcwd()
-# ------------------------------------
-
-LIVESNAP_NAME = "live_snap.jpg"
-SOFTWARE_VERSION = "1.3.0-dev"
 
 _HTTP_STATUS_CODE_BAD_REQUEST = 400
 _HTTP_STATUS_CODE_REQUEST_TIMEOUT = 408
@@ -69,25 +61,12 @@ _HTTP_STATUS_CODE_PARTIAL_CONTENT = 206
 class WebInterfaceHandler(BaseHTTPRequestHandler):
     # Each request handler runs in its own thread.
     
-    # Shared static variables with no synchronizers.
-    # current status of the program
-    status_text = 'Not yet set'
-    disk_space_used_percent = -1
-    # overwrite count.
-    n_loops = -1
-    current_record_name = ''
-    is_recording_on = False
     # Calculate application uptime with it.
     program_start_time = None
-    # User can playback last recorded video on home page, post powerup
-    # wait until one recording is over.
-    last_recorded_file = 'Please wait for one recording to be over'
     
-    # Shared static variables with synchronizers.
-    wcmd_livesnap = webcommand.WebCommandSync()
-    wcmd_rotate = webcommand.WebCommandSync()
-    wcmd_stop_recording = webcommand.WebCommandSync()
-        
+    # Global Command queue.
+    cmd_q = None
+    
     def do_GET(self):
         # Serve URLs, POST method not used in html files.
         # url are at root level.
@@ -103,9 +82,26 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
             if self.path == '/':
                 self.serve_index()
             elif self.path == '/reboot':
-                self.serve_reboot()
+                self.redirect_to_home()
+                command = Command(Command.CMD_REBOOT)
+                WebInterfaceHandler.cmd_q.put(command)
+                # Redirect before queuing command so that browser doesn't get stuck at this command.
+                """
+                if command.wait():
+                    self.redirect_to_home()
+                else:
+                    self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
+                """
             elif self.path == '/poweroff':
-                self.serve_shutdown()
+                self.redirect_to_home()
+                command = Command(Command.CMD_SHUTDOWN)
+                WebInterfaceHandler.cmd_q.put(command)
+                """
+                if command.wait():
+                    self.redirect_to_home()
+                else:
+                    self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
+                """
             elif self.path == '/view-records':
                 self.serve_view_records()
             elif '/get-record' in self.path:
@@ -125,21 +121,29 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
                 else:
                     self.send_error(_HTTP_STATUS_CODE_BAD_REQUEST)
             elif self.path == '/rotate':
-                WebInterfaceHandler.wcmd_rotate.start()
-                if WebInterfaceHandler.wcmd_rotate.wait(5):
+                command = Command(Command.CMD_ROTATE)
+                WebInterfaceHandler.cmd_q.put(command)
+                if command.wait():
                     self.redirect_to_home()
                 else:
                     self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
             elif self.path == '/livesnap':
                 self.serve_snap()
             elif self.path == '/stop':
-                # For now only reboot can start camera/recording
-                WebInterfaceHandler.wcmd_stop_recording.start()
-                if WebInterfaceHandler.wcmd_stop_recording.wait(5):
+                command = Command(Command.CMD_STOP_REC)
+                WebInterfaceHandler.cmd_q.put(command)
+                if command.wait():
                     self.redirect_to_home()
                 else:
                     self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
-            elif self.path.endswith(RECORD_FORMAT_EXTENSION):
+            elif self.path == '/start':
+                command = Command(Command.CMD_START_REC)
+                WebInterfaceHandler.cmd_q.put(command)
+                if command.wait():
+                    self.redirect_to_home()
+                else:
+                    self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
+            elif self.path.endswith(config.RECORD_FORMAT_EXTENSION):
                 self.serve_record(self.path.lstrip("/"), False)
             else:
                 msg = "Requested URI: '" + self.path + "' not found."
@@ -159,14 +163,6 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
     def serve_index(self):
         self.home_page()
     
-    def serve_reboot(self):
-        self.redirect_to_home()
-        util.reboot()
-    
-    def serve_shutdown(self):
-        self.redirect_to_home()
-        util.shutdown()
-                    
     def redirect_to_home(self):
         self.send_response(_HTTP_STATUS_CODE_REDIRECT) 
         self.send_header('Location', '/')
@@ -178,7 +174,7 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         # Either send the record file as attachment for download 
         # (download_play == true) or as
         # content (download_play == false)
-        filepath = RECORDS_LOCATION + '/' + recname
+        filepath = config.RECORDS_LOCATION + '/' + recname
         
         if os.path.exists(filepath) == False:
             self.send_error(_HTTP_STATUS_CODE_NOT_FOUND)
@@ -332,7 +328,7 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         
         self.send_header('Content-type','text/html')
         
-        filepath = HOME + '/html/view-records.html'  
+        filepath = config.HOME + '/html/view-records.html'  
         
         page = ''
         with open(filepath, 'r') as f:
@@ -340,8 +336,8 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         
         rec_table_rows = ''
         serial_no = 0;
-        rec_files = glob.glob(RECORDS_LOCATION + '/*' 
-                        + RECORD_FORMAT_EXTENSION)
+        rec_files = glob.glob(config.RECORDS_LOCATION + '/*' 
+                        + config.RECORD_FORMAT_EXTENSION)
         rec_files.sort(key=os.path.getmtime, reverse=True)
         
         for record in rec_files:
@@ -362,6 +358,7 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         page = page.replace('_REC_TABLE_ROWS', rec_table_rows)
         
         self.send_header('Content-Length', str(len(page)))
+        self.send_no_cache()
         self.end_headers()
         self.wfile.write(bytes(page, "utf8"))
                 
@@ -371,14 +368,14 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         self.send_response(_HTTP_STATUS_CODE_OK)
         self.send_header('Content-type','text/html')
         
-        filepath = HOME + '/html/home.html'
+        filepath = config.HOME + '/html/home.html'
         
         page = ''
         with open(filepath, 'r') as f:
                 page = f.read()
-        page = page.replace('_VERSION', str(SOFTWARE_VERSION))
+        page = page.replace('_VERSION', str(config.SOFTWARE_VERSION))
         
-        page = page.replace('_STATUS_TEXT', WebInterfaceHandler.status_text)
+        page = page.replace('_STATUS_TEXT', recorder.recording_status_text)
         
         # Update SoC temperature
         cpu_temp = util.get_cpu_temperature()
@@ -402,40 +399,52 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         ssid, my_ip = util.get_wlan_info()
         page = page.replace('_WLAN_SSID', ssid)
         page = page.replace('_IP_ADDR', my_ip)
+        disk_space_used_percent = recorder.get_disk_space_info()
         page = page.replace('_DISK_SPACE', 
-            str(WebInterfaceHandler.disk_space_used_percent) + '%')
+            str(disk_space_used_percent) + '%')
         page = page.replace('_N_LOOPS',
-            str(WebInterfaceHandler.n_loops))
+            str(recorder.n_loops))
         page = page.replace('_CURR_REC',
-            str(WebInterfaceHandler.current_record_name))
+            str(recorder.current_record_name))
         
-        if WebInterfaceHandler.is_recording_on:
+        if recorder.recording_on:
             page = page.replace('_STATUS_COLOR', "lightgreen")
         else:
             page = page.replace('_STATUS_COLOR', "orange")
         
+        rec_control = '<a href="/start">Start Recording</a>'
+        if recorder.recording_on:
+            rec_control = '<a href="/stop">Stop Recording</a>'
+            
         page = page.replace('_WEB_COMMANDS', 
                 '<a href="view-records">View/Download Records</a>' 
                 + '<a href="/rotate">Rotate 90&deg; &#x21bb;</a>' 
-                + '<a href="/stop">Stop Recording</a>' 
+                + rec_control
                 + '<a href="/reboot">Reboot</a>' 
                 + '<a href="/poweroff">Power Off</a>')
         
-        page = page.replace('_LRV_FILE', WebInterfaceHandler.last_recorded_file)
+        page = page.replace('_LRV_FILE', recorder.last_recorded_name)
         
         self.send_header('Content-Length', str(len(page)))
+        self.send_no_cache()
         self.end_headers()
         
         self.wfile.write(bytes(page, "utf8"))
     
+    def send_no_cache(self):
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Expires', '0')
+        
+        
     def serve_snap(self):
-        if not WebInterfaceHandler.is_recording_on:
+        if not recorder.recording_on:
             self.send_error(_HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
             
         # Get current video snapshot, a low cost way 
         # to check whether camera is running ok.
-        WebInterfaceHandler.wcmd_livesnap.start()
-        if WebInterfaceHandler.wcmd_livesnap.wait(5) == False:
+        command = Command(Command.CMD_TAKE_LIVE_SNAPSHOT)
+        WebInterfaceHandler.cmd_q.put(command)
+        if command.wait() != True:
             self.send_error(_HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
             return
                 
@@ -444,9 +453,10 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         
                 
         try:
-            filepath = RECORDS_LOCATION + "/" + LIVESNAP_NAME
+            filepath = config.LIVESNAP_FILE
             file_len = os.stat(filepath).st_size
             self.send_header('Content-Length', str(file_len))
+            self.send_no_cache()
             self.end_headers()
             with open(filepath, 'rb') as f:
                 try:
@@ -466,6 +476,7 @@ class ThreadingWebServer(ThreadingMixIn, HTTPServer):
     pass
             
 def _start_webserver():
+    WebInterfaceHandler.program_start_time = datetime.now()
     server = ThreadingWebServer(_SERVER_ADDRESS, WebInterfaceHandler)
     server.serve_forever()
 
@@ -479,7 +490,6 @@ def start():
 if __name__ == "__main__":
     # For testing in standalone mode.
     try:
-        WebInterfaceHandler.program_start_time = datetime.now()
         _start_webserver()
     except Exception as e:
         logger.error(traceback.format_exc())

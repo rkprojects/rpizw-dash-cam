@@ -28,6 +28,7 @@ import logging
 from gatt_dbus_service import *
 
 import uuids
+import util
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,15 @@ SYSTEM_DATE_TIME_CHAR_UUID  = uuids.to128bit_ble('2A08')
 # Bluetooth SIG - Characteristic User Description
 CHAR_USER_DESCRIPTION_DESC_UUID = uuids.to128bit_ble('2901')
 
+CTRL_CMD_NOP            = 0
+CTRL_CMD_REBOOT         = 1
+CTRL_CMD_SHUTDOWN       = 2
+CTRL_CMD_STOP_REC       = 3
+CTRL_CMD_START_REC      = 4
+CTRL_CMD_REC_MODE_LOOP  = 5
+CTRL_CMD_REC_MODE_TRIG  = 6
+CTRL_CMD_TRIG_REC       = 7
+
 class DCamService(Service):
     """
     This service will update remote client about:
@@ -67,12 +77,7 @@ class DCamService(Service):
 
     Controls: Needs authenticated connection.
     1. Control Flag (authenticated-signed-writes)
-        a. bit 0 = Reboot
-        b. bit 1 = Shutdown
-        c. bit 2 = Stop Recording
-        d. bit 3 = Start Recording
-        e. bit 4 = Disable Advertisement
-        f. bit 5-7 = Set to zero.
+        
     # TODO
     2. Date Time (read, authenticated-signed-writes)
     3. Location (authenticated-signed-writes)
@@ -80,7 +85,9 @@ class DCamService(Service):
     def __init__(self, bus):
         Service.__init__(self, bus, SERVICE_PATH, DCAM_SERVICE_UUID, True)
         
-        self.ipaddr_char = TextReadNotifyChar(bus, 0, self, "WiFi SSID - IP Address")
+        self.ipaddr_char = TextReadFromSourceChar(bus, 0, self,
+                        lambda : ": ".join(util.get_wlan_info()),
+                        "WiFi SSID - IP Address")
         self.recording_status_char = TextReadNotifyChar(bus, 1, self, "Recording Status")
         self.version_char = VersionChar(bus, 2, self)
         self.temperature_char = TemperatureChar(bus, 3, self, "SoC Temperature")
@@ -90,7 +97,14 @@ class DCamService(Service):
         self.add_characteristic(self.version_char)
         self.add_characteristic(self.temperature_char)
         
-        self.control_char = ByteWriteChrc(bus, 4, self, "Control Settings")
+        self.control_char = ByteWriteChrc(bus, 4, self,
+                                "Byte Command:\n" \
+                                "0 = No effect\n" \
+                                "1 = Reboot\n" \
+                                "2 = Shutdown\n" \
+                                "3 = Stop Recording\n" \
+                                "4 = Start Recording\n"
+                                )
         
         self.add_characteristic(self.control_char)
         
@@ -108,7 +122,7 @@ class DCamService(Service):
         self.recording_status_char.update(value)
         
     def register_control_cb(self, cb):
-        self.control_char.update_cb(cb)
+        self.control_char.register_cb(cb)
         
 
 class TemperatureChar(Characteristic):
@@ -166,7 +180,7 @@ class TextReadNotifyChar(Characteristic):
                 ['read', 'notify'],
                 service)
         self.notifying = False
-        self._text = bytes("na", encoding='utf-8')
+        self._text = dbus.ByteArray("na".encode())
         if description:
             self.add_descriptor(
                 CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
@@ -176,7 +190,7 @@ class TextReadNotifyChar(Characteristic):
 
     def update(self, new_value):
         if new_value is not None:
-            self._text = bytes(new_value, encoding='utf-8')
+            self._text = dbus.ByteArray(new_value.encode())
 
         if not self.notifying:
             return self.notifying
@@ -201,6 +215,22 @@ class TextReadNotifyChar(Characteristic):
             return
 
         self.notifying = False
+        
+class TextReadFromSourceChar(Characteristic):
+    def __init__(self, bus, index, service, src, description=None):
+        Characteristic.__init__(
+                self, bus, index,
+                BLUETOOTH_STRING_CHAR_UUID,
+                ['read'],
+                service)
+        
+        self._src = src
+        if description:
+            self.add_descriptor(
+                CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
+
+    def ReadValue(self, options):
+        return dbus.ByteArray(self._src().encode())
 
 
 class VersionChar(Characteristic):
@@ -236,7 +266,7 @@ class ByteWriteChrc(Characteristic):
         
         self.on_write_cb = on_write_cb
         
-    def update_cb(self, cb):
+    def register_cb(self, cb):
         self.on_write_cb = cb
             
     def WriteValue(self, value, options):

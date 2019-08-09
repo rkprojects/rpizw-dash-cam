@@ -30,13 +30,37 @@ except ImportError:
 
 import threading
 import logging
+import traceback
 
 import dcam_service
 import dcam_advertisement
 
+import config
+import recorder
+from command import Command
+
 logger = logging.getLogger(__name__)
 
-def start(control_cb=None):
+_ble_service = None
+
+_ble_cmd_to_glb_cmd = {
+    dcam_service.CTRL_CMD_REBOOT: Command.CMD_REBOOT,
+    dcam_service.CTRL_CMD_SHUTDOWN: Command.CMD_SHUTDOWN,
+    dcam_service.CTRL_CMD_START_REC: Command.CMD_START_REC,
+    dcam_service.CTRL_CMD_STOP_REC: Command.CMD_STOP_REC
+}
+
+def _on_cpu_temp(v):
+    global _ble_service
+    
+    # Temperature Charactertistics expects short int with exponent 10^-1
+    _ble_service.update_temperature(int(v * 10))
+
+def _control_cb(v):
+    pass
+    
+def start(cmd_q):
+    global _ble_service
     try:    
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         bus = dbus.SystemBus()
@@ -45,8 +69,8 @@ def start(control_cb=None):
         
         app = dcam_service.start(bus)
         # Setup all service callbacks before advertising.
-        service = app.services[0]
-        service.register_control_cb(control_cb)
+        _ble_service = app.services[0]
+        _ble_service.register_control_cb(lambda v: cmd_q.put(Command(_ble_cmd_to_glb_cmd[v])) if v in _ble_cmd_to_glb_cmd else None)
         
         logger.info("Registering Advertisement")
         ad = dcam_advertisement.start(bus)
@@ -57,9 +81,14 @@ def start(control_cb=None):
         
         logger.info("DCam Service Online")
         
-        return service
+        _ble_service.update_version(config.SOFTWARE_VERSION)
+        recorder.subscribe_for_cpu_temp(lambda v: _ble_service.update_temperature(int(v * 10)))
+        recorder.subscribe_for_status(lambda v: _ble_service.update_recording_status(v))
+        
+        return _ble_service
     except Exception as e:
         logger.error(e)
+        logger.error(traceback.format_exc())
         return None
 
 

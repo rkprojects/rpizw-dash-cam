@@ -49,8 +49,8 @@ def delete_old_logs(log_dir, days_to_keep=2):
 def get_wlan_info():
     # Return tuple (ssid, device_ip)
     try:
-        ssid = subprocess.check_output("iwgetid -r".split()).decode('utf-8')
-        cfg = subprocess.check_output("ifconfig wlan0".split()).decode('utf-8')
+        ssid = subprocess.check_output("iwgetid -r".split()).decode('utf-8').strip()
+        cfg = subprocess.check_output("ifconfig wlan0".split()).decode('utf-8').strip()
         i = cfg.find("inet ")
         ip = ""
         if i >= 0:
