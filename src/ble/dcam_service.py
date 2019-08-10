@@ -25,11 +25,13 @@ import dbus
 import threading
 import logging
 from datetime import datetime
+import traceback
 
 from gatt_dbus_service import *
 
 import uuids
 import util
+import location_speed
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +53,10 @@ RECORDING_STATUS_CHAR_UUID  = BLUETOOTH_STRING_CHAR_UUID
 VERSION_CHAR_UUID           = uuids.to128bit_ble('2A28')
 # Bluetooth SIG - Temperature Celsius
 TEMPERATURE_CHAR_UUID       = uuids.to128bit_ble('2A1F')
-REBOOT_CHAR_UUID            = BLUETOOTH_STRING_CHAR_UUID
-STOP_RECORDING_CHAR_UUID    = BLUETOOTH_STRING_CHAR_UUID
 # Bluetooth SIG - Date Time
 SYSTEM_DATE_TIME_CHAR_UUID  = uuids.to128bit_ble('2A08')
+# Bluetooth SIG - Location and Speed 
+LOCATION_SPEED_CHAR_UUID    = uuids.to128bit_ble('2A67')
 
 # Bluetooth SIG - Characteristic User Description
 CHAR_USER_DESCRIPTION_DESC_UUID = uuids.to128bit_ble('2901')
@@ -64,9 +66,11 @@ CTRL_CMD_REBOOT         = 1
 CTRL_CMD_SHUTDOWN       = 2
 CTRL_CMD_STOP_REC       = 3
 CTRL_CMD_START_REC      = 4
-CTRL_CMD_REC_MODE_LOOP  = 5
-CTRL_CMD_REC_MODE_TRIG  = 6
-CTRL_CMD_TRIG_REC       = 7
+CTRL_CMD_ENABLE_GPS_LOC = 5
+#CTRL_CMD_REC_MODE_LOOP  = 
+#CTRL_CMD_REC_MODE_TRIG  = 
+#CTRL_CMD_TRIG_REC       = 
+
 
 class DCamService(Service):
     """
@@ -77,11 +81,10 @@ class DCamService(Service):
     4. Temperature deg-Celsius (Notify)
 
     Controls: Needs authenticated connection.
+    Default pairing mode is JustWorks. For now there is no interactive authentication.
     1. Control Flag (authenticated-signed-writes)
     2. Date Time (read, authenticated-signed-writes)
-        
-    # TODO
-    3. Location (authenticated-signed-writes)
+    3. Location-Speed (authenticated-signed-writes)
     """
     def __init__(self, bus):
         Service.__init__(self, bus, SERVICE_PATH, DCAM_SERVICE_UUID, True)
@@ -104,15 +107,28 @@ class DCamService(Service):
                                 "1 = Reboot\n" \
                                 "2 = Shutdown\n" \
                                 "3 = Stop Recording\n" \
-                                "4 = Start Recording\n"
+                                "4 = Start Recording\n" \
+                                "5 = Enable GPS Location\n"
                                 )
         
         self.add_characteristic(self.control_char)
         
-        self.sys_datetime = SystemDateTimeRWChrc(bus, 5, self, "RPi Date Time")
+        self.sys_datetime = SystemDateTimeRWChrc(bus, 5, self,
+                                        "Read/Update RPi Date Time.\n" \
+                                        "Reversing system time may "\
+                                        "cause python parked threads " \
+                                        "to remain blocked indefinitely.\n"\
+                                        "DashCam will become unresponsive.")
+                                        
         self.add_characteristic(self.sys_datetime)
         
+        self.location_speed_char = LocationSpeedChrc(bus, 6, self,
+                                    "Stream Location-Speed data to DashCam.\n" \
+                                    "Interval is up to the app.\n" \
+                                    "Location will appear in video annotation " \
+                                    "in signed decimal degrees format. Speed in kilometer per hour format.")
         
+        self.add_characteristic(self.location_speed_char)
 
     def update_ipaddr(self, value):
         self.ipaddr_char.update(value)
@@ -128,6 +144,12 @@ class DCamService(Service):
         
     def register_control_cb(self, cb):
         self.control_char.register_cb(cb)
+        
+    def register_sys_datetime_cb(self, cb):
+        self.sys_datetime.register_cb(cb)
+        
+    def register_location_speed_cb(self, cb):
+        self.location_speed_char.register_cb(cb)
         
 
 class TemperatureChar(Characteristic):
@@ -286,7 +308,7 @@ class ByteWriteChrc(Characteristic):
             threading.Thread(target=self.on_write_cb, args=(byte,)).start()
             
 class SystemDateTimeRWChrc(Characteristic):
-    def __init__(self, bus, index, service, description=None):
+    def __init__(self, bus, index, service, description=None, on_write_cb=None):
         Characteristic.__init__(
                 self, bus, index,
                 SYSTEM_DATE_TIME_CHAR_UUID,
@@ -297,38 +319,66 @@ class SystemDateTimeRWChrc(Characteristic):
             self.add_descriptor(
                 CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
         
+        self.on_write_cb = on_write_cb
+        
+    def register_cb(self, cb):
+        self.on_write_cb = cb
+        
     def WriteValue(self, value, options):
         logger.info("SystemDateTimeRWChrc WriteValue called")
 
         if len(value) != 7:
             logger.error("Invalid length: " + str(len(value)))
+            return
             
-        #logger.info("Raw value: " + repr(value))
-        
-        raw_dt = struct.unpack("<HBBBBB", bytes(value))
-        dt = datetime(raw_dt[0], # year 
-                        raw_dt[1], # mon
-                        raw_dt[2], # day
-                        hour=raw_dt[3],
-                        minute=raw_dt[4],
-                        second=raw_dt[5]
-                        )
-        logger.info("Setting System time to :" + repr(dt))
-        util.set_system_datetime(dt)
+        try:
+            dt = util.unpack_ble_gatt_datetime(bytes(value))
+            logger.info("Setting System time to :" + repr(dt))
+            
+            if self.on_write_cb:
+                threading.Thread(target=self.on_write_cb, args=(dt,)).start()
+        except Exception as e:
+            logger.error(e)
+            logger.error(traceback.format_exc())
 
-        
     def ReadValue(self, options):
         logger.info("SystemDateTimeRWChrc ReadValue called")
         now = datetime.today()
-        dt = dbus.Array(struct.pack('<H', now.year)
-                    + bytes([now.month,
-                            now.day,
-                            now.hour,
-                            now.minute,
-                            now.second]),
+        dt = dbus.Array(util.pack_ble_gatt_datetime(now),
                     signature='y')
         
         return dt
+        
+class LocationSpeedChrc(Characteristic):
+    def __init__(self, bus, index, service, description=None, on_write_cb=None):
+        Characteristic.__init__(
+                self, bus, index,
+                LOCATION_SPEED_CHAR_UUID,
+                ['write'],
+                service)
+                
+        if description:
+            self.add_descriptor(
+                CharacteristicUserDescriptionDescriptor(bus, 0, self, description))
+        
+        self.on_write_cb = on_write_cb
+        
+    def register_cb(self, cb):
+        self.on_write_cb = cb
+        
+    def WriteValue(self, value, options):
+        logger.info("LocationSpeedChrc WriteValue called")
+
+        try:
+            loc = location_speed.LocationSpeed(bytes(value))
+            
+            logger.info("Got location info :" + str(loc))
+            
+            if self.on_write_cb:
+                threading.Thread(target=self.on_write_cb, args=(loc,)).start()
+        except Exception as e:
+            logger.error(e)
+            logger.error(traceback.format_exc())
 
 class CharacteristicUserDescriptionDescriptor(Descriptor):
     """

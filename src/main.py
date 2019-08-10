@@ -134,8 +134,23 @@ try:
             recorder.queue_commands(request)
         elif request.cmd == Command.CMD_TAKE_LIVE_SNAPSHOT:
             recorder.queue_commands(request)
-        
-        
+        elif request.cmd == Command.CMD_SET_SYS_DATETIME:
+            """
+            Changing system time to forward and then backward (due 
+            to NTP sync) may cause python parked 
+            threads to block indefinitely. Leading the dashcam 
+            to become unresponsive.
+            https://bugs.python.org/issue23428
+            """
+            util.set_system_datetime(request.data)
+            request.done()
+        elif request.cmd == Command.CMD_ENABLE_GPS_LOCATION:
+            # For design with on-board GPS source.
+            # Activate that here.
+            request.done()
+        elif request.cmd == Command.CMD_SET_LOCATION_SPEED:
+            recorder.queue_commands(request)
+
 except Exception as e:
     logger.error(e)
     logger.error(traceback.format_exc())

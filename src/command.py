@@ -26,6 +26,12 @@ class Command:
     # data = rotation value
     CMD_ROTATE              = 5
     CMD_TAKE_LIVE_SNAPSHOT  = 6
+    # data = DateTime object
+    CMD_SET_SYS_DATETIME    = 7
+    # data = (Latitude, Longitude)
+    CMD_ENABLE_GPS_LOCATION = 8
+    # data = LocationSpeed from ble
+    CMD_SET_LOCATION_SPEED  = 9
     
     # Created by sender.
     def __init__(self, cmd, data=None):

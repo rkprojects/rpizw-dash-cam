@@ -21,6 +21,7 @@ import glob
 import os
 import datetime
 import logging
+import struct
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +86,43 @@ def bluez_available():
         return False
     
     return False
+
+def unpack_uint16(barray, exp=10**0, rnd_digits=2):
+    v = struct.unpack("<H", barray[0:2])[0]
+    return round(v * exp, rnd_digits)
+
+def unpack_uint24(barray, exp=10**0, rnd_digits=2):
+    v = struct.unpack("<I", barray[0:3] + bytes([0]))[0]
+    return round(v * exp, rnd_digits)
+
+def unpack_sint32(barray, exp=10**0, rnd_digits=2):
+    v = struct.unpack("<i", barray[0:4])[0]
+    return round(v * exp, rnd_digits)
+
+def unpack_sint24(barray, exp=10**0, rnd_digits=2):
+    sign = 0
+    if (barray[2] & 0x80) != 0:
+        sign = 0xff
+        
+    v = struct.unpack("<i", barray[0:3] + bytes([sign]))[0]
+    return round(v * exp, rnd_digits)
+    
+def unpack_ble_gatt_datetime(barray):
+    raw_dt = struct.unpack("<HBBBBB", barray[0:7])
+    dt = datetime.datetime(raw_dt[0], # year 
+                raw_dt[1], # mon
+                raw_dt[2], # day
+                hour=raw_dt[3],
+                minute=raw_dt[4],
+                second=raw_dt[5]
+                )
+    return dt
+
+def pack_ble_gatt_datetime(dt):
+    packed_dt = struct.pack('<H', dt.year) + bytes([dt.month,
+                                            dt.day,
+                                            dt.hour,
+                                            dt.minute,
+                                            dt.second])
+                
+    return packed_dt

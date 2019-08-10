@@ -47,7 +47,8 @@ _ble_cmd_to_glb_cmd = {
     dcam_service.CTRL_CMD_REBOOT: Command.CMD_REBOOT,
     dcam_service.CTRL_CMD_SHUTDOWN: Command.CMD_SHUTDOWN,
     dcam_service.CTRL_CMD_START_REC: Command.CMD_START_REC,
-    dcam_service.CTRL_CMD_STOP_REC: Command.CMD_STOP_REC
+    dcam_service.CTRL_CMD_STOP_REC: Command.CMD_STOP_REC,
+    dcam_service.CTRL_CMD_ENABLE_GPS_LOC: Command.CMD_ENABLE_GPS_LOCATION
 }
 
 def _on_cpu_temp(v):
@@ -71,7 +72,9 @@ def start(cmd_q):
         # Setup all service callbacks before advertising.
         _ble_service = app.services[0]
         _ble_service.register_control_cb(lambda v: cmd_q.put(Command(_ble_cmd_to_glb_cmd[v])) if v in _ble_cmd_to_glb_cmd else None)
-        
+        _ble_service.register_sys_datetime_cb(lambda v: cmd_q.put(Command(Command.CMD_SET_SYS_DATETIME, v)))
+        _ble_service.register_location_speed_cb(lambda v: cmd_q.put(Command(Command.CMD_SET_LOCATION_SPEED, v)))
+
         logger.info("Registering Advertisement")
         ad = dcam_advertisement.start(bus)
         mainloop = GObject.MainLoop()

@@ -201,6 +201,8 @@ def _loop_recoder():
     current_rotation = _cfg[CFG_ROT_KEY]
     camera.rotation = current_rotation
     
+    location_text = None
+    
     try:
         index = _cfg[CFG_CURR_INDEX_KEY] + 1
         n_loops = _cfg[CFG_N_LOOPS_KEY]
@@ -322,6 +324,9 @@ def _loop_recoder():
                                             + ' - '
                                             + fixed_annotation)
                     
+                    if location_text:
+                        camera.annotate_text += '\n' + location_text
+                    
                     # poll for any recorder related commands
                     try:
                         request = _cmd_q.get(block=False)
@@ -335,6 +340,9 @@ def _loop_recoder():
                             request.done()
                         elif request.cmd == Command.CMD_TAKE_LIVE_SNAPSHOT:
                             camera.capture(config.LIVESNAP_FILE, use_video_port=True)
+                            request.done()
+                        elif request.cmd == Command.CMD_SET_LOCATION_SPEED:
+                            location_text = str(request.data)
                             request.done()
                     except queue.Empty:
                         pass
