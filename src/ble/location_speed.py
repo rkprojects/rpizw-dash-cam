@@ -160,6 +160,6 @@ class LocationSpeed():
         if self.is_heading_present():
             if len(s) > 0:
                 s += ", "
-            s += " Heading: {} D".format(self.heading)
+            s += "Heading: {} D".format(self.heading)
             
         return s

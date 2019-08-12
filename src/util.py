@@ -1,5 +1,5 @@
 # Dash Camera with Raspberry Pi Zero W
-# Copyright (C) 2019 Ravikiran Bukkasagara <code@ravikiranb.com>
+# Copyright (C) 2019 Ravikiran Bukkasagara <contact@ravikiranb.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ import os
 import datetime
 import logging
 import struct
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,24 @@ def set_system_datetime(dtime):
     
 def bluez_available():
     try:
+        # There could be multiple versions installed.
+        # Check if running version of bluetoothd is >= 5.50
+        btd_path = subprocess.check_output("ps -o cmd -C bluetoothd --no-headers".split()).decode('utf-8').strip()
+        if len(btd_path) == 0:
+            logger.info("Bluetoothd service required for BLE features.")
+            return False
+        
+        btd_version = subprocess.check_output((btd_path + " -v").split()).decode('utf-8').strip()
+        fields = btd_version.split('.')
+        major = int(fields[0])
+        minor = int(fields[1])
+        logger.info("Found bluetoothd service version: {}, required: >= 5.50".format(btd_version))
+        if major >= 5:
+            if major == 5 and minor < 50:
+                    return False
+        else:
+            return False
+            
         import dbus.mainloop.glib
         import dbus
         import dbus.service
@@ -82,9 +101,13 @@ def bluez_available():
         except ImportError:
           import gobject as GObject
         return True
-    except ImportError:
+    except ImportError as e:
+        logger.info("Required module for BLE service not found: {}".format(e))
         return False
-    
+    except Exception as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())
+        return False
     return False
 
 def unpack_uint16(barray, exp=10**0, rnd_digits=2):
@@ -126,3 +149,6 @@ def pack_ble_gatt_datetime(dt):
                                             dt.second])
                 
     return packed_dt
+
+       
+    

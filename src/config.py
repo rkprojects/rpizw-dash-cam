@@ -1,5 +1,5 @@
 # Dash Camera with Raspberry Pi Zero W
-# Copyright (C) 2019 Ravikiran Bukkasagara <code@ravikiranb.com>
+# Copyright (C) 2019 Ravikiran Bukkasagara <contact@ravikiranb.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 import os
 
-SOFTWARE_VERSION = "1.3.0-dev"
+SOFTWARE_VERSION = "1.3.0"
 
 HOME = os.getcwd()
 
