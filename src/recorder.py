@@ -185,25 +185,26 @@ def _loop_recoder():
     global recording_on
     global recording_status_text
     
-    recording_status_text = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
-                _VIDEO_WIDTH, _VIDEO_HEIGHT, config.VIDEO_FPS)
-    logger.info(recording_status_text)
-    _update_subs_on_status(recording_status_text)
-    
-    # Initialize camera
-    camera = picamera.PiCamera()
-    camera.resolution = (_VIDEO_WIDTH, _VIDEO_HEIGHT)
-    camera.framerate_range = (1, config.VIDEO_FPS)
-    camera.framerate = config.VIDEO_FPS
-    camera.annotate_background = True
-    fixed_annotation =  "RavikiranB.com"
-    camera.annotate_text_size = config.ANNOTATE_TEXT_SIZE
-    current_rotation = _cfg[CFG_ROT_KEY]
-    camera.rotation = current_rotation
-    
-    location_text = None
-    
     try:
+        camera = None
+        recording_status_text = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
+                    _VIDEO_WIDTH, _VIDEO_HEIGHT, config.VIDEO_FPS)
+        logger.info(recording_status_text)
+        _update_subs_on_status(recording_status_text)
+        
+        # Initialize camera
+        camera = picamera.PiCamera()
+        camera.resolution = (_VIDEO_WIDTH, _VIDEO_HEIGHT)
+        camera.framerate_range = (1, config.VIDEO_FPS)
+        camera.framerate = config.VIDEO_FPS
+        camera.annotate_background = True
+        fixed_annotation =  "RavikiranB.com"
+        camera.annotate_text_size = config.ANNOTATE_TEXT_SIZE
+        current_rotation = _cfg[CFG_ROT_KEY]
+        camera.rotation = current_rotation
+    
+        location_text = None
+    
         index = _cfg[CFG_CURR_INDEX_KEY] + 1
         n_loops = _cfg[CFG_N_LOOPS_KEY]
         
@@ -214,7 +215,7 @@ def _loop_recoder():
         high_temp_triggered = False
         
         recording_on = True
-        
+    
         while not _stop:
             try:        
                 disk_used_space_percent = get_disk_space_info()
@@ -365,14 +366,19 @@ def _loop_recoder():
                 recording_status_text = "Internal error. Recording Stopped.<br>" + str(e)
                 _update_subs_on_status(recording_status_text)
                 break
-    finally:
+        
         recording_on = False
-        camera.close()
-        recording_status_text = "Recording stopped by user at " \
+        if _stop:
+            recording_status_text = "Recording stopped by user at " \
                         "{0}. Camera closed.".format(
                                 _build_timestamp(forfile=False))
                                 
+            _update_subs_on_status(recording_status_text)
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        logger.error(e)        
+        recording_status_text = "Internal error.<br>" + str(e)
         _update_subs_on_status(recording_status_text)
-
-        
-        
+    finally:
+        if camera:
+            camera.close()

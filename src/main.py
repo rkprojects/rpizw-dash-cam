@@ -77,43 +77,46 @@ logging.basicConfig(format='%(module)s:%(lineno)s:%(levelname)s:%(message)s',
 
 logger = logging.getLogger(__name__)
 
-if user_dir_error[0]: 
-    logger.error("Invalid given directory '%s'", args.records_location)
-    if user_dir_error[1] is not None:
-        logger.critical("Error: '%s'", user_dir_error[1])
-        sys.exit(-1)
-    logger.warning("Defaulting to '%s'.", config.RECORDS_LOCATION)
-    
-if user_loglevel_invalid:
-    logger.error("Loglevel '%s' given is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
-
-util.delete_old_logs(config.RECORDS_LOCATION, config.KEEP_OLD_LOGS_FOR_DAYS)
-
-# Global command queue
-cmd_q = queue.Queue()
-
-
-recorder.init()
-logger.info("Starting Recording\n\n")
-recorder.start()
-
-webinterface.WebInterfaceHandler.cmd_q = cmd_q
-
-logger.info("Starting Web Server\n\n")
-web_th = webinterface.start()
-
-# Enable BLE Control feature if BlueZ is available
-ble_service = None
-if util.bluez_available():
-    sys.path.append(config.HOME + "/ble")
-    import ble_dcam
-    
-    logger.info("Starting BLE GATT Server\n\n")
-    ble_dcam.start(cmd_q)
-else:
-    logger.error("BLE feature won't be enabled: requirements not met.")
-
 try:
+    if user_dir_error[0]: 
+        logger.error("Invalid given directory '%s'", args.records_location)
+        if user_dir_error[1] is not None:
+            logger.critical("Error: '%s'", user_dir_error[1])
+            sys.exit(-1)
+        logger.warning("Defaulting to '%s'.", config.RECORDS_LOCATION)
+        
+    if user_loglevel_invalid:
+        logger.error("Loglevel '%s' given is incorrect, defaulting to '%s'.", user_loglevel, loglevel)
+        
+    logger.info("DashCam version {}".format(config.SOFTWARE_VERSION))
+    logger.info("Deleting logs older than {} days.".format(config.KEEP_OLD_LOGS_FOR_DAYS))
+
+    util.delete_old_logs(config.RECORDS_LOCATION, config.KEEP_OLD_LOGS_FOR_DAYS)
+
+    # Global command queue
+    cmd_q = queue.Queue()
+
+
+    recorder.init()
+    logger.info("Starting Recording\n\n")
+    recorder.start()
+
+    webinterface.WebInterfaceHandler.cmd_q = cmd_q
+
+    logger.info("Starting Web Server\n\n")
+    web_th = webinterface.start()
+
+    # Enable BLE Control feature if BlueZ is available
+    ble_service = None
+    if util.bluez_available():
+        sys.path.append(config.HOME + "/ble")
+        import ble_dcam
+        
+        logger.info("Starting BLE GATT Server\n\n")
+        ble_dcam.start(cmd_q)
+    else:
+        logger.error("BLE feature won't be enabled: requirements not met.")
+
     while True:
         request = cmd_q.get()
         if request.cmd == Command.CMD_REBOOT:
