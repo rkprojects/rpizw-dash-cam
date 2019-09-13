@@ -18,7 +18,7 @@
 
 import os
 
-SOFTWARE_VERSION = "1.3.1"
+SOFTWARE_VERSION = "1.4.0-dev"
 
 HOME = os.getcwd()
 
@@ -27,6 +27,7 @@ HOME = os.getcwd()
 RECORDS_LOCATION = HOME + "/records"
 
 # Maximum duration of each video in seconds. Change it as per use case.
+# Applicable only in Loop Recording Mode.
 DURATION_SEC = 60
 
 # Limit and note maximum files to record when used disk space reaches 
@@ -47,6 +48,8 @@ LOW_RES_VIDEO_HEIGHT = 720
 
 # Size of text that will appear on top of recorded video.
 ANNOTATE_TEXT_SIZE = 20
+# Default background color for annotate text.
+ANNOTATE_TEXT_BACKGROUND_DEFAULT_COLOR = 'black'
 
 # How many days to keep old log files
 KEEP_OLD_LOGS_FOR_DAYS = 2
@@ -58,6 +61,31 @@ TEMPERATURE_THRESHOLD_NORMAL = 60.0 # degree Celsius
 
 HTTP_SERVER_PORT_NUMBER = 8080
 
+# Fixed part of the text overlayed on video. To identify or name the device/mfg.
+FIXED_VIDEO_ANNOTATION = "RavikiranB.com"
+
+# Triggered Recording Mode - Duration (seconds) to retain before
+# trigger point.
+DURATION_BEFORE_TRIG_POINT_SEC = 10
+# Triggered Recording Mode - Duration (seconds) to retain after
+# trigger point.
+DURATION_AFTER_TRIG_POINT_SEC = 10
+# Background color for annotate text after trigger.
+ANNOTATE_TEXT_BACKGROUND_TRIGERRED_COLOR = 'red'
+
+# How often to update SoC temperature in triggered mode.
+CPU_TEMP_UPDATE_INTERVAL_IN_TRIG_REC_MODE_SEC = 5
+
+# Recorder Modes
+# Continous recording to disk.
+RECORDER_MODE_LOOP = 0
+# Continous recording to memory (RAM), only written to disk on trigger.
+RECORDER_MODE_TRIG = 1
+
+# Default recorder mode
+DEFAULT_RECORDER_MODE = RECORDER_MODE_LOOP
+
+
 # ---------- Compile time configurable parameters END-----------
 
 LIVESNAP_FILENAME = "live_snap.jpg"
@@ -68,6 +96,7 @@ CFG_FILENAME = "cfg.json"
 CFG_FILE = RECORDS_LOCATION + '/' + CFG_FILENAME
 
 RECORD_FORMAT_EXTENSION = ".mp4"
+
 
 def update_records_location(loc):
     global RECORDS_LOCATION

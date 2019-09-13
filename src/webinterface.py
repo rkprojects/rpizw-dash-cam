@@ -120,8 +120,22 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
                     self.serve_record(kv['f'][0], False)        
                 else:
                     self.send_error(_HTTP_STATUS_CODE_BAD_REQUEST)
+            elif '/rec-mode' in self.path:
+                # This url will have parameter: ?mode=<command>
+                kv = self.parse_get_params()
+                if 'mode' in kv:
+                    self.serve_change_rec_mode(int(kv['mode'][0]))    
+                else:
+                    self.send_error(_HTTP_STATUS_CODE_BAD_REQUEST)
             elif self.path == '/rotate':
                 command = Command(Command.CMD_ROTATE)
+                WebInterfaceHandler.cmd_q.put(command)
+                if command.wait():
+                    self.redirect_to_home()
+                else:
+                    self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
+            elif self.path == '/trigger':
+                command = Command(Command.CMD_TRIG_REC)
                 WebInterfaceHandler.cmd_q.put(command)
                 if command.wait():
                     self.redirect_to_home()
@@ -266,6 +280,23 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
             self.write_to_connection(d)
             total_bytes_copied += bs
         
+    def serve_change_rec_mode(self, mode):
+        req = None
+        if mode == config.RECORDER_MODE_LOOP:
+            req = Command.CMD_CHANGE_REC_MODE_LOOP
+        elif mode == config.RECORDER_MODE_TRIG:
+            req = Command.CMD_CHANGE_REC_MODE_TRIG
+        else:
+            self.send_error(_HTTP_STATUS_CODE_BAD_REQUEST)
+            return
+        
+        command = Command(req)
+        WebInterfaceHandler.cmd_q.put(command)
+        if command.wait():
+            self.redirect_to_home()
+        else:
+            self.send_error(_HTTP_STATUS_CODE_REQUEST_TIMEOUT)
+    
     def write_to_connection(self, data):
         # writing to socket may write less data
     
@@ -416,12 +447,30 @@ class WebInterfaceHandler(BaseHTTPRequestHandler):
         if recorder.recording_on:
             rec_control = '<a href="/stop">Stop Recording</a>'
             
+        rec_mode_info = recorder.get_recording_mode()
+        
+        trig_control = ""
+        change_rec_mode_control = ""
+        if rec_mode_info[0] == config.RECORDER_MODE_TRIG:
+            trig_control = '<a href="/trigger">Simulate Trigger</a>'
+            change_rec_mode_control = '<a href="/rec-mode?mode={}" class="emb_links">Change to Loop Mode</a>'.format(
+                        config.RECORDER_MODE_LOOP)
+        else:
+            change_rec_mode_control = '<a href="/rec-mode?mode={}" class="emb_links">Change to Trigger Mode</a>'.format(
+                        config.RECORDER_MODE_TRIG)
+        
+        page = page.replace('_REC_MODE',            
+            str(rec_mode_info[1]) + "&nbsp;&nbsp;" + change_rec_mode_control)
+        
+        
+            
         page = page.replace('_WEB_COMMANDS', 
                 '<a href="view-records">View/Download Records</a>' 
                 + '<a href="/rotate">Rotate 90&deg; &#x21bb;</a>' 
                 + rec_control
                 + '<a href="/reboot">Reboot</a>' 
-                + '<a href="/poweroff">Power Off</a>')
+                + '<a href="/poweroff">Power Off</a>'
+                + trig_control)
         
         page = page.replace('_LRV_FILE', recorder.last_recorded_name)
         

@@ -78,6 +78,8 @@ logging.basicConfig(format='%(module)s:%(lineno)s:%(levelname)s:%(message)s',
 logger = logging.getLogger(__name__)
 
 try:
+    web_th = None
+    
     if user_dir_error[0]: 
         logger.error("Invalid given directory '%s'", args.records_location)
         if user_dir_error[1] is not None:
@@ -153,11 +155,24 @@ try:
             request.done()
         elif request.cmd == Command.CMD_SET_LOCATION_SPEED:
             recorder.queue_commands(request)
-
+        elif request.cmd == Command.CMD_TRIG_REC:
+            """
+            Trigger source could be internal accelerometer from
+            addon board, BLE command, Web interface or from image processing.
+            """
+            recorder.queue_commands(request)
+        elif request.cmd == Command.CMD_CHANGE_REC_MODE_LOOP:
+            recorder.change_mode(config.RECORDER_MODE_LOOP)
+            request.done()
+        elif request.cmd == Command.CMD_CHANGE_REC_MODE_TRIG:
+            recorder.change_mode(config.RECORDER_MODE_TRIG)
+            request.done()
+            
 except Exception as e:
     logger.error(e)
     logger.error(traceback.format_exc())
 finally:
     recorder.stop()
-    web_th.join()
+    if web_th:
+        web_th.join()
 

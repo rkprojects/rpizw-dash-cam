@@ -57,16 +57,21 @@ CFG_MAX_FILES_KEY = 'max-files'
 # sd card life expectancy.
 CFG_N_LOOPS_KEY = 'n-loops'
 
+# Save Recorder mode to correctly restore on reboot/powerup.
+CFG_RECORDER_MODE_KEY = 'rec-mode'
+
 # Dictionary to save configuration settings.
 _cfg = { 
     CFG_ROT_KEY: 0,
     CFG_CURR_INDEX_KEY: 0,
     CFG_MAX_FILES_KEY:0,
-    CFG_N_LOOPS_KEY: 0
+    CFG_N_LOOPS_KEY: 0,
+    CFG_RECORDER_MODE_KEY: config.DEFAULT_RECORDER_MODE
 }
 
 KB = 1024
 MB = KB * KB
+
 
 # Read only variables for other modules.
 # No synchronization. Merely to show on user interface.
@@ -75,6 +80,7 @@ last_recorded_name = "Please wait for one recording to be over"
 n_loops = 0
 recording_on = False
 recording_status_text = ""
+current_recording_mode = None
 # -------------------------------------
 
 
@@ -90,6 +96,8 @@ _cpu_temp_subscribers = []
 _status_subscribers = []
 _subscribers_lock = threading.Lock()
 _cmd_q = queue.Queue()
+
+_recorder_mode = config.DEFAULT_RECORDER_MODE
 
 # ---------------------------------------
 
@@ -142,18 +150,26 @@ def get_disk_space_info():
 
 def init():
     global _cfg
+    global _recorder_mode
     
     # Load existing configuration file or start fresh.
     if os.path.exists(config.CFG_FILE):
         with open(config.CFG_FILE, 'r') as f:
             _cfg = json.load(f)
+            if CFG_RECORDER_MODE_KEY in _cfg:
+                _recorder_mode = _cfg[CFG_RECORDER_MODE_KEY]
 
 def start():
     global _th_recorder
     global _stop
+    global _recorder_mode
     
     if _stop:
-        _th_recorder = threading.Thread(target=_loop_recoder)
+        target_fn = _loop_recoder
+        if _recorder_mode == config.RECORDER_MODE_TRIG:
+            target_fn = _triggered_recorder
+            
+        _th_recorder = threading.Thread(target=target_fn)
         _stop = False
         _th_recorder.start()
     
@@ -163,9 +179,49 @@ def stop():
     if _th_recorder:
         _stop = True
         _th_recorder.join()
-        
+
+def get_recording_mode():
+    """
+    Returns tuple (recorder_mode, string_representation)
+    """
+    global _recorder_mode
+    
+    s = "Loop"
+    if _recorder_mode == config.RECORDER_MODE_TRIG:
+        s = "Trigger"
+    
+    return (_recorder_mode, s)
+    
+def change_mode(mode):
+    """
+    Returns True on mode change else False.
+    """
+    
+    global _recorder_mode
+    global _cfg
+    
+    if _recorder_mode != mode:
+        stop()
+    else:
+        return False
+            
+    if mode != config.RECORDER_MODE_TRIG and \
+        mode != config.RECORDER_MODE_LOOP:
+        return False
+    
+    _recorder_mode = mode
+    _cfg[CFG_RECORDER_MODE_KEY] = mode
+    _cfg_save()
+    
+    start()
+    
+    return True
+    
 def queue_commands(request):
-    _cmd_q.put(request)
+    global _stop
+    
+    if not _stop:
+        _cmd_q.put(request)
 
 def _build_timestamp(forfile=True):
     if forfile:
@@ -197,9 +253,10 @@ def _loop_recoder():
         camera.resolution = (_VIDEO_WIDTH, _VIDEO_HEIGHT)
         camera.framerate_range = (1, config.VIDEO_FPS)
         camera.framerate = config.VIDEO_FPS
-        camera.annotate_background = True
-        fixed_annotation =  "RavikiranB.com"
+        camera.annotate_background = picamera.Color(config.ANNOTATE_TEXT_BACKGROUND_DEFAULT_COLOR)
+        fixed_annotation =  config.FIXED_VIDEO_ANNOTATION
         camera.annotate_text_size = config.ANNOTATE_TEXT_SIZE
+        
         current_rotation = _cfg[CFG_ROT_KEY]
         camera.rotation = current_rotation
     
@@ -208,14 +265,13 @@ def _loop_recoder():
         index = _cfg[CFG_CURR_INDEX_KEY] + 1
         n_loops = _cfg[CFG_N_LOOPS_KEY]
         
-        recording_status_text = "Starting Recording."
+        recording_status_text = "Starting Recording in Loop mode."
         _update_subs_on_status(recording_status_text)
         
-        #webinterface.WebInterfaceHandler.program_start_time = datetime.now()
         high_temp_triggered = False
         
         recording_on = True
-    
+        
         while not _stop:
             try:        
                 disk_used_space_percent = get_disk_space_info()
@@ -382,3 +438,206 @@ def _loop_recoder():
     finally:
         if camera:
             camera.close()
+
+def _triggered_recorder():
+    global _cfg
+    global _stop
+    global _VIDEO_WIDTH
+    global _VIDEO_HEIGHT
+    global n_loops
+    global current_record_name
+    global last_recorded_name
+    global recording_on
+    global recording_status_text
+    
+    try:
+        camera = None
+        cir_stream = None
+        
+        recording_status_text = "Initializing Pi Camera to {0}x{1} @ {2} fps".format(
+                    _VIDEO_WIDTH, _VIDEO_HEIGHT, config.VIDEO_FPS)
+        logger.info(recording_status_text)
+        _update_subs_on_status(recording_status_text)
+        
+        # Initialize camera
+        camera = picamera.PiCamera()
+        camera.resolution = (_VIDEO_WIDTH, _VIDEO_HEIGHT)
+        camera.framerate_range = (1, config.VIDEO_FPS)
+        camera.framerate = config.VIDEO_FPS
+        camera.annotate_background = picamera.Color(config.ANNOTATE_TEXT_BACKGROUND_DEFAULT_COLOR)
+        fixed_annotation =  config.FIXED_VIDEO_ANNOTATION
+        camera.annotate_text_size = config.ANNOTATE_TEXT_SIZE
+        current_rotation = _cfg[CFG_ROT_KEY]
+        camera.rotation = current_rotation
+    
+        location_text = None
+    
+        index = _cfg[CFG_CURR_INDEX_KEY] + 1
+        n_loops = _cfg[CFG_N_LOOPS_KEY]
+        
+        recording_status_text = "Starting Recording in Triggered mode."
+        _update_subs_on_status(recording_status_text)
+        
+        high_temp_triggered = False
+        
+        recording_on = True
+        total_video_duration = config.DURATION_BEFORE_TRIG_POINT_SEC + config.DURATION_AFTER_TRIG_POINT_SEC
+        cir_stream = picamera.PiCameraCircularIO(camera, 
+                    seconds=total_video_duration)
+                    
+        camera.start_recording(cir_stream,
+                                format='h264', quality=config.VIDEO_QUALITY)
+    
+        while not _stop:
+            try:        
+                disk_used_space_percent = get_disk_space_info()
+                    
+                if _cfg[CFG_MAX_FILES_KEY] == 0:
+                    if (disk_used_space_percent >= 
+                            config.MAX_USED_DISK_SPACE_PERCENT):
+                        # From now on recording index will loop 
+                        # back to zero when index 
+                        # reaches _cfg[CFG_MAX_FILES_KEY]
+                        _cfg[CFG_MAX_FILES_KEY] = index
+                        index = 0
+                        n_loops += 1
+                        _cfg[CFG_N_LOOPS_KEY] = n_loops
+                elif index >= _cfg[CFG_MAX_FILES_KEY]:
+                    index = 0
+                    n_loops += 1
+                    _cfg[CFG_N_LOOPS_KEY] = n_loops
+                        
+                # Update SoC temperature in video annotation, to keep 
+                # track of resolution drop vs temp.
+                cpu_temp = util.get_cpu_temperature()
+                        
+                _update_subs_on_cpu_temp(cpu_temp)
+                
+                rec_index = str(index)
+                rec_filename = "unnamed"
+                
+                video_format_text = "RPi DashCam {0}x{1} @ {2}fps".format(
+                                        _VIDEO_WIDTH,
+                                        _VIDEO_HEIGHT,
+                                        config.VIDEO_FPS)
+                
+                # Delete old record with same index number, 
+                # Note: old record will have different time stamp on it. 
+                existing_records = glob.glob(config.RECORDS_LOCATION 
+                                    + '/' 
+                                    + rec_index +  '_*')
+                # There should be only one old record.
+                for record in existing_records:
+                    os.remove(record)
+                        
+                recording_status_text = "All OK"
+                    
+                _update_subs_on_status(recording_status_text)
+                
+                seconds = 0
+                triggered = False
+                common_video_text = (' - ' 
+                                    + 'T ' + str(cpu_temp) + 'C - '
+                                    + video_format_text
+                                    + ' - '
+                                    + fixed_annotation)
+                                    
+                camera.annotate_background = picamera.Color(config.ANNOTATE_TEXT_BACKGROUND_DEFAULT_COLOR)
+                current_record_name = ""
+                
+                while (not _stop) and (seconds < config.DURATION_AFTER_TRIG_POINT_SEC):
+                    # update time
+                    rec_time = _build_timestamp(forfile=False)
+                    if triggered:
+                        camera.annotate_text = (rec_index 
+                                                + ' - ' 
+                                                + rec_time
+                                                + common_video_text)
+                        seconds += 1
+                    else:
+                        camera.annotate_text = (rec_time 
+                                                + common_video_text)
+                    
+                    if location_text:
+                        camera.annotate_text += '\n' + location_text
+                    
+                    # poll for any recorder related commands
+                    try:
+                        request = _cmd_q.get(block=False)
+                        if request.cmd == Command.CMD_ROTATE:
+                            current_rotation += 90
+                            if current_rotation >= 360:
+                                current_rotation = 0
+                            camera.rotation = current_rotation
+                            _cfg[CFG_ROT_KEY] = current_rotation
+                            _cfg_save()
+                            request.done()
+                        elif request.cmd == Command.CMD_TAKE_LIVE_SNAPSHOT:
+                            camera.capture(config.LIVESNAP_FILE, use_video_port=True)
+                            request.done()
+                        elif request.cmd == Command.CMD_SET_LOCATION_SPEED:
+                            location_text = str(request.data)
+                            request.done()
+                        elif request.cmd == Command.CMD_TRIG_REC:
+                            if not triggered:
+                                triggered = True
+                                seconds = 0
+                                camera.annotate_background = picamera.Color(config.ANNOTATE_TEXT_BACKGROUND_TRIGERRED_COLOR)
+                                # Record file name format: index_yyyy-mm-dd_HH-MM-SS.mp4
+                                rec_filename =  (rec_index 
+                                            +  '_' 
+                                            + _build_timestamp()
+                                            + config.RECORD_FORMAT_EXTENSION)
+                                current_record_name = rec_filename
+                            request.done()
+                    except queue.Empty:
+                        pass
+                    
+                    camera.wait_recording(1)
+                    
+                if triggered:
+                    rec_filepath = config.RECORDS_LOCATION + '/' + rec_filename
+                    
+                    mp4wfile = mp4writer.MP4Writer(filepath=rec_filepath,
+                                fps=config.VIDEO_FPS)
+                    cir_stream.copy_to(mp4wfile.get_file_object(),
+                                seconds=total_video_duration)
+                            
+                    mp4wfile.close()
+                    
+                    last_recorded_name = rec_filename
+                    
+                    _cfg[CFG_CURR_INDEX_KEY] = index
+                    _cfg_save()
+                    
+                    index += 1
+                    
+                    cir_stream.clear()
+            
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                logger.error(e)        
+                logger.error('Recording Stopped')
+                recording_status_text = "Internal error. Recording Stopped.<br>" + str(e)
+                _update_subs_on_status(recording_status_text)
+                break
+        
+        recording_on = False
+        if _stop:
+            recording_status_text = "Recording stopped by user at " \
+                        "{0}. Camera closed.".format(
+                                _build_timestamp(forfile=False))
+                                
+            _update_subs_on_status(recording_status_text)
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        logger.error(e)        
+        recording_status_text = "Internal error.<br>" + str(e)
+        _update_subs_on_status(recording_status_text)
+    finally:
+        if camera:
+            camera.close()
+        if cir_stream:
+            cir_stream.close()
+
+    

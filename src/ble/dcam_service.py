@@ -67,9 +67,9 @@ CTRL_CMD_SHUTDOWN       = 2
 CTRL_CMD_STOP_REC       = 3
 CTRL_CMD_START_REC      = 4
 CTRL_CMD_ENABLE_GPS_LOC = 5
-#CTRL_CMD_REC_MODE_LOOP  = 
-#CTRL_CMD_REC_MODE_TRIG  = 
-#CTRL_CMD_TRIG_REC       = 
+CTRL_CMD_REC_MODE_LOOP  = 6
+CTRL_CMD_REC_MODE_TRIG  = 7
+CTRL_CMD_TRIG_REC       = 8
 
 
 class DCamService(Service):
@@ -108,7 +108,10 @@ class DCamService(Service):
                                 "2 = Shutdown\n" \
                                 "3 = Stop Recording\n" \
                                 "4 = Start Recording\n" \
-                                "5 = Enable GPS Location\n"
+                                "5 = Enable GPS Location\n" \
+                                "6 = Record in Loop mode\n" \
+                                "7 = Record in Trigger mode\n" \
+                                "8 = Trigger Recording\n"
                                 )
         
         self.add_characteristic(self.control_char)

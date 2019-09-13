@@ -48,7 +48,10 @@ _ble_cmd_to_glb_cmd = {
     dcam_service.CTRL_CMD_SHUTDOWN: Command.CMD_SHUTDOWN,
     dcam_service.CTRL_CMD_START_REC: Command.CMD_START_REC,
     dcam_service.CTRL_CMD_STOP_REC: Command.CMD_STOP_REC,
-    dcam_service.CTRL_CMD_ENABLE_GPS_LOC: Command.CMD_ENABLE_GPS_LOCATION
+    dcam_service.CTRL_CMD_ENABLE_GPS_LOC: Command.CMD_ENABLE_GPS_LOCATION,
+    dcam_service.CTRL_CMD_REC_MODE_LOOP: Command.CMD_CHANGE_REC_MODE_LOOP,
+    dcam_service.CTRL_CMD_REC_MODE_TRIG: Command.CMD_CHANGE_REC_MODE_TRIG,
+    dcam_service.CTRL_CMD_TRIG_REC: Command.CMD_TRIG_REC
 }
 
 def _on_cpu_temp(v):

@@ -32,6 +32,10 @@ class Command:
     CMD_ENABLE_GPS_LOCATION = 8
     # data = LocationSpeed from ble
     CMD_SET_LOCATION_SPEED  = 9
+    CMD_TRIG_REC            = 10
+    
+    CMD_CHANGE_REC_MODE_LOOP = 11
+    CMD_CHANGE_REC_MODE_TRIG = 12
     
     # Created by sender.
     def __init__(self, cmd, data=None):
